@@ -1,10 +1,10 @@
 from fastapi import FastAPI, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import declarative_base, sessionmaker, Session
+import os
 
-DATABASE_URL = "postgresql://user:password@localhost/test"
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost/test")
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
