@@ -59,7 +59,16 @@ def test_invalid_login():
     response = client.post("/login", json={"email": "login@example.com", "password": "bad"})
     assert response.status_code == 400
     assert response.json()["detail"] == "Invalid credentials"
+    
+def test_list_conversations(monkeypatch):
+    client.post("/register", json={"email": "list@example.com", "password": "pw"})
+    login_resp = client.post("/login", json={"email": "list@example.com", "password": "pw"})
+    token = login_resp.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
 
+    resp = client.get("/conversations", headers=headers)
+    assert resp.status_code == 200
+    assert isinstance(resp.json(), list)
 
 def test_send_and_chat(monkeypatch):
     client.post("/register", json={"email": "conv@example.com", "password": "pw"})

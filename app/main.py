@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, Header
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 from passlib.context import CryptContext
 import requests
@@ -29,7 +29,6 @@ SERPER_API_KEY = "3ac3421edc9038fe814fcf282616bd4c93e5999d"
 MODEL_NAME = "llama3.1:8b"
 NB_SITES_MAX = 3
 
-
 def generer_requete_web(question_utilisateur: str) -> str:
     if ollama is None:
         return ""
@@ -50,7 +49,6 @@ def generer_requete_web(question_utilisateur: str) -> str:
         return response["message"]["content"].strip()
     except Exception:
         return ""
-
 
 def recherche_serper(query: str, max_results: int) -> list[str]:
     url_api = "https://google.serper.dev/search"
@@ -106,7 +104,6 @@ def synthese_contenu(question_initiale: str, url: str, contenu_site: str) -> str
     except Exception:
         return ""
 
-
 def generate_answer(question: str) -> str:
     if ollama is None:
         return ""
@@ -133,8 +130,8 @@ class Conversation(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     title = Column(String)
-    started_at = Column(DateTime, default=datetime.time)
-    last_update = Column(DateTime, default=datetime.time)
+    started_at = Column(DateTime, default=datetime.now(timezone.utc))
+    last_update = Column(DateTime, default=datetime.now(timezone.utc))
 
 class Message(Base):
     __tablename__ = "messages"
@@ -142,7 +139,7 @@ class Message(Base):
     conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False)
     role = Column(String)
     content = Column(String)
-    created_at = Column(DateTime, default=datetime.time)
+    created_at = Column(DateTime, default=datetime.now(timezone.utc))
 
 Base.metadata.create_all(bind=engine)
 
@@ -195,11 +192,12 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
     token = str(db_user.id)
     return {"message": "Logged in", "user_id": db_user.id, "token": token}
 
-
 class SendMessage(BaseModel):
     conversation_id: int | None = None
     content: str
+    use_web: bool = True
 
+# Renvoyer la dernière date des conversations pour tri futur 
 @app.get("/conversations")
 def list_conversations(
     user: User = Depends(get_current_user), db: Session = Depends(get_db)
@@ -227,14 +225,15 @@ def get_chat(
         .order_by(Message.created_at)
         .all()
     )
-    return [{"role": m.role, "content": m.content} for m in messages]
-
+    
+    return {[{"role": m.role, "content": m.content} for m in messages]}
 
 @app.post("/send")
 def send_message(
     payload: SendMessage,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    web: bool = False, # TODO default False and add non web search
 ):
     if payload.conversation_id:
         conv = (
@@ -252,6 +251,7 @@ def send_message(
         db.add(conv)
         db.commit()
         db.refresh(conv)
+        
     user_msg = Message(conversation_id=conv.id, role="user", content=payload.content)
     db.add(user_msg)
     db.commit()
@@ -260,6 +260,6 @@ def send_message(
     answer = generate_answer(payload.content)
     assistant_msg = Message(conversation_id=conv.id, role="assistant", content=answer)
     db.add(assistant_msg)
-    conv.last_update = datetime.utcnow()
+    conv.last_update = datetime.now(timezone.utc)
     db.commit()
     return {"conversation_id": conv.id, "response": answer}
