@@ -107,7 +107,7 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
 class SendMessage(BaseModel):
     conversation_id: int | None = None
     content: str
-    use_web: bool
+    use_web: bool = False
 
 @app.get("/conversations")
 def list_conversations(
@@ -157,26 +157,17 @@ def send_message(
         if not conv:
             raise HTTPException(status_code=404, detail="Conversation not found")
     else:
-        print(payload.content)
         conv = Conversation(user_id=user.id, title=titre.generate_title(payload.content))
         db.add(conv)
         db.commit()
         db.refresh(conv)
     
-    if payload.use_web:    
-        user_msg = Message(conversation_id=conv.id, role="user", content=payload.content)
-        db.add(user_msg)
-        db.commit()
-        db.refresh(user_msg)
-
+    if payload.use_web:
+        local.insert_message_and_memory(conv.id, "user", payload.content)
         answer = web.recherche_web(payload.content)
-        
-        assistant_msg = Message(conversation_id=conv.id, role="assistant", content=answer)
-        db.add(assistant_msg)
+        local.insert_message_and_memory(conv.id, "assistant", answer)
     else:
-        answer = local.answer_with_memory(
-            payload.content, conv.id, k=5
-        )
+        answer = local.answer_with_memory(payload.content, conv.id, k=5)
 
     conv.last_update = datetime.now(timezone.utc)
     db.commit()

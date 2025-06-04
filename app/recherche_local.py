@@ -22,17 +22,16 @@ vectorstore = PGVector(
     embedding_length=384              # dimension de l'embedding
 )
 
-MODEL_NAME = "granite3.1-dense"
+MODEL_NAME = "granite3.1-dense:8b"
 
 # --- Fonctions utilitaires
 
 def insert_message_and_memory(conversation_id: int, role: str, content: str) -> int:
     """
-    1) Insère un message dans 'messages'
-    2) Récupère le message_id
-    3) Calcul de l'embedding (avec hf_embeddings.embed_query)
-    4) Insertion dans 'memories'
-    5) Retourne message_id
+    1) Insère un message dans la table 'messages'
+    2) Calcule l'embedding (hf_embeddings.embed_query)
+    3) Insère dans 'memories'
+    4) Retourne le message_id.
     """
     conn = psycopg2.connect(
         dbname="test", user="postgres", password="Admin", host="localhost"
@@ -49,17 +48,12 @@ def insert_message_and_memory(conversation_id: int, role: str, content: str) -> 
     )
     message_id = cursor.fetchone()[0]
     conn.commit()
-    # (b) Calcul de l'embedding
-    embedding = hf_embeddings.embed_query(content)  # liste de floats
-    # (c) Insertion dans memories
-    cursor.execute(
-        """
-        INSERT INTO memories (message_id, content, embedding)
-        VALUES (%s, %s, %s);
-        """,
-        (message_id, content, embedding)
+    
+    vectorstore.add_texts(
+        [content],
+        metadatas=[{"message_id": message_id, "conversation_id": conversation_id}],
     )
-    conn.commit()
+
     cursor.close()
     conn.close()
     return message_id
@@ -87,6 +81,19 @@ def get_conversation_history(conversation_id: int):
     conn.close()
     return rows  # liste de tuples (role, content, created_at)
 
+def retrieve_memories(conversation_id: int, query: str, k: int = 5) -> list[str]:
+    """
+    Récupère les k passages les plus similaires DANS LA MÊME conversation.
+    """
+    retriever = vectorstore.as_retriever(
+        search_kwargs={
+            "k": k,
+            "filter": {"conversation_id": conversation_id}
+        }
+    )
+    docs = retriever.get_relevant_documents(query)
+    # docs est une liste d’objets Document, dont `page_content` est la colonne `content` de memories
+    return [doc.page_content for doc in docs]
 
 def answer_with_memory(user_input: str, conversation_id: int, k: int = 5) -> str:
     """
@@ -97,16 +104,19 @@ def answer_with_memory(user_input: str, conversation_id: int, k: int = 5) -> str
     5. Insère la réponse dans messages + memory.
     6. Retourne la réponse.
     """
-    # (1) Insérer la question user
-    user_message_id = insert_message_and_memory(conversation_id, "user", user_input)
+   # (1) Insérer la question de l'utilisateur
+    insert_message_and_memory(conversation_id, "user", user_input)
 
-    # (2) Retrieval dans pgvector
-    retriever = vectorstore.as_retriever(search_kwargs={"k": k})
-    docs = retriever.get_relevant_documents(user_input)
-    passages = [doc.page_content for doc in docs]
+    # (2) Retrieval dans pgvector, limité à cette même conversation
+    passages = retrieve_memories(conversation_id, user_input, k=k)
+    # passages est une liste de chaînes de caractères issues de la colonne `content` de `memories`
 
-    # (3) Construire le prompt final
-    context = "\n".join(f"Mémoire {i+1} : {txt}" for i, txt in enumerate(passages))
+    # (3) Construire le prompt
+    if passages:
+        context = "\n".join(f"Mémoire {i+1}: {txt}" for i, txt in enumerate(passages))
+    else:
+        context = "Aucun contexte pertinent trouvé dans cette conversation."
+        
     system_msg = {
         "role": "system",
         "content": """
