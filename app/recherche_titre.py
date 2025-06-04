@@ -1,52 +1,40 @@
 from ollama import chat
 
-prompt = """
-Tu es spécialisé dans la génération de titres.
+MODEL_NAME = "llama3.1:8b"
 
-Ta tâche est simple : à partir d'une question ou d'une requête utilisateur, génère un **titre court, clair et pertinent** qui résume l’essentiel du sujet.
+SYSTEM_PROMPT = """
+Tu es un générateur de titres. Génère 10 titres courts et choisis le plus pertinent pour la question posée.
+Ecrit uniquement le titre le plus pertinent.
 
-- Ne réponds qu'avec le titre, sans explications ni commentaires
-- Le titre doit être le plus concis possible (4 à 8 mots).
-- Il ne doit contenir **aucun article inutile** ("le", "la", "un", "une", etc.) sauf si nécessaire au sens.
-- Il doit être **représentatif du contenu** de la question.
-- Il ne doit **jamais inclure de ponctuation** (pas de point, virgule, point d'interrogation, etc.).
-- Il ne doit **rien ajouter ni reformuler** en dehors du titre.
-- Retourne **uniquement** le titre. Aucune phrase explicative, aucun commentaire.
+Consignes impératives :
+• Réponds UNIQUEMENT par un titre court (3-4 mots).
+• Pas de ponctuation, pas de guillemets.
+• Aucun article superflu sauf si indispensable au sens.
+• Ne fournis aucun commentaire ni explication.
 
 Exemples :
+Question : Donne-moi une recette pour faire un fondant au chocolat
+→ Recette fondant chocolat
+Question : Quels sont les effets du café sur la concentration ?
+→ Café concentration effets
+Question : Peux-tu résumer l’histoire de Napoléon Bonaparte ?
+→ Résumé Napoléon Bonaparte
+Question : Comment optimiser le code Python pour qu'il soit plus rapide ?
+→ Optimisation code Python
+""".strip()
 
-Utilisateur : Donne-moi une recette pour faire un fondant au chocolat  
-Titre : Recette fondant chocolat
-
-Utilisateur : Quels sont les effets du café sur la concentration ?  
-Titre : Café concentration effets
-
-Utilisateur : Comment fonctionne un moteur électrique ?  
-Titre : Fonctionnement moteur électrique
-
-Utilisateur : Est-ce que l’IA peut remplacer un médecin ?  
-Titre : IA remplacement médecin
-
-Utilisateur : Peux-tu me résumer l'histoire de Napoléon Bonaparte ?  
-Titre : Résumé Napoléon Bonaparte
-
-Maintenant, génère un titre pour cette question :
-« {{QUESTION_UTILISATEUR}} »
-
-"""
-
-def generate_titre(content: str) -> str:
+def generate_title(question: str) -> str:
     response = chat(
-        model="granite3.1-dense:8b",
+        model=MODEL_NAME,
         messages=[
-            {"role": "user", "content": prompt.format(content=content)}
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user",   "content": question.strip()}
         ]
     )
-    return response["message"]["content"]
-
+    return response["message"]["content"].strip()
 
 # Exemple d'utilisation
 if __name__ == "__main__":
-    question = "Comment optimiser le code Python pour qu'il soit plus rapide ?"
-    titre = generate_titre(question)
-    print(f"Titre généré : {titre}")
+    q = "Quelle est la meilleure façon d’apprendre une langue étrangère ?"
+    titre = generate_title(q)
+    print("Titre généré :", titre)
