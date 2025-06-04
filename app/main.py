@@ -1,3 +1,6 @@
+# ----------------------------------------------------------------
+# IMPORTATIONS
+# ----------------------------------------------------------------
 from fastapi import FastAPI, Depends, HTTPException, Header
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, DateTime
@@ -8,6 +11,10 @@ from passlib.context import CryptContext
 import requests
 from bs4 import BeautifulSoup
 import ollama
+from datetime import datetime
+import logging
+import requests
+from bs4 import BeautifulSoup
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",

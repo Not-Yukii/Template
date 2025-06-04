@@ -1,6 +1,6 @@
 # Template
 
-This project includes a simple FastAPI application that connects to a PostgreSQL database and manages user accounts.
+This project includes a simple FastAPI application that manages users and chat conversations backed by a PostgreSQL database.
 
 ## Running the application
 
@@ -16,9 +16,12 @@ Start the API with `uvicorn`:
 uvicorn app.main:app --reload
 ```
 
-The API provides two endpoints:
+The API now exposes the following endpoints:
 
-- `POST /register` - Create a new user with `email` and `password`.
-- `POST /login` - Authenticate a user with `email` and `password`.
+- `POST /register` - Create a new user with `email` and `password`. The password is hashed before storing.
+- `POST /login` - Authenticate with `email` and `password` and receive a token.
+- `GET /conversations` - List conversations for the authenticated user (`Authorization: Bearer <token>`).
+- `GET /chat/{id}` - Retrieve all messages for a conversation.
+- `POST /send` - Send a message to a conversation or start a new one.
 
-Make sure a PostgreSQL server is running and accessible at `postgresql://user:password@localhost/test` or update `DATABASE_URL` in `app/main.py` accordingly.
+Make sure a PostgreSQL server is running and accessible at `postgresql://user:password@localhost/test` or update the `DATABASE_URL` environment variable accordingly.
