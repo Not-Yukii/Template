@@ -11,6 +11,7 @@ from passlib.context import CryptContext
 import ollama
 from . import recherche_web as web
 from . import recherche_titre as titre
+from . import recherche_local as local
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
@@ -161,19 +162,22 @@ def send_message(
         db.add(conv)
         db.commit()
         db.refresh(conv)
-        
-    user_msg = Message(conversation_id=conv.id, role="user", content=payload.content)
-    db.add(user_msg)
-    db.commit()
-    db.refresh(user_msg)
+    
+    if payload.use_web:    
+        user_msg = Message(conversation_id=conv.id, role="user", content=payload.content)
+        db.add(user_msg)
+        db.commit()
+        db.refresh(user_msg)
 
-    if payload.use_web:
         answer = web.recherche_web(payload.content)
+        
+        assistant_msg = Message(conversation_id=conv.id, role="assistant", content=answer)
+        db.add(assistant_msg)
     else:
-        answer = ""
+        answer = local.answer_with_memory(
+            payload.content, conv.id, k=5
+        )
 
-    assistant_msg = Message(conversation_id=conv.id, role="assistant", content=answer)
-    db.add(assistant_msg)
     conv.last_update = datetime.now(timezone.utc)
     db.commit()
     return {"conversation_id": conv.id, "response": answer}

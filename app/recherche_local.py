@@ -7,7 +7,6 @@ from ollama import chat
 
 # --- CONSTantes de connexion PostgreSQL
 DB_URI = "postgresql+psycopg2://postgres:Admin@localhost:5432/test"
-# On peut créer un engine SQLAlchemy que PGVector (option « connection=engine ») utilisera.
 engine = create_engine(DB_URI, echo=False)
 
 # --- Module d'embeddings (Sentence-Transformers)
@@ -16,8 +15,6 @@ hf_embeddings = HuggingFaceEmbeddings(
 )
 
 # --- Vectorstore pour pgvector
-# Ici on donne l'objet hf_embeddings (pas hf_embeddings.embed_query),
-# et on précise le nom logique "memories" pour la collection interne.
 vectorstore = PGVector(
     connection_string=DB_URI,
     embedding_function=hf_embeddings, # objet complet
@@ -112,11 +109,14 @@ def answer_with_memory(user_input: str, conversation_id: int, k: int = 5) -> str
     context = "\n".join(f"Mémoire {i+1} : {txt}" for i, txt in enumerate(passages))
     system_msg = {
         "role": "system",
-        "content": "Tu es un assistant expert en Python et en algorithmes."
+        "content": """
+        Tu es un assistant intelligent français qui répond aux questions en prévilégiant les informations fournies dans le contexte.
+        Si nécessaire, bases toi sur le contexte fournis pour formuler ta réponse.
+        """
     }
     user_msg = {
         "role": "user",
-        "content": f"{context}\n\nQuestion : {user_input}\nRéponse :"
+        "content": f"{context}\n\n Voici la question : {user_input}"
     }
 
     # (4) Génération via Ollama
@@ -132,7 +132,3 @@ def answer_with_memory(user_input: str, conversation_id: int, k: int = 5) -> str
 
     # (6) Retourner la réponse
     return assistant_response
-
-def recherche_local(question:str) -> str:
-    reponse = answer_with_memory(question, 1, k=5)
-    return reponse
