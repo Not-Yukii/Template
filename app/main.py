@@ -8,13 +8,8 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from datetime import datetime, timezone
 import os
 from passlib.context import CryptContext
-import requests
-from bs4 import BeautifulSoup
 import ollama
-from datetime import datetime
-import logging
-import requests
-from bs4 import BeautifulSoup
+from . import recherche_web as web
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
@@ -31,100 +26,6 @@ def get_password_hash(password: str) -> str:
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
-
-SERPER_API_KEY = "3ac3421edc9038fe814fcf282616bd4c93e5999d"
-MODEL_NAME = "llama3.1:8b"
-NB_SITES_MAX = 3
-
-def generer_requete_web(question_utilisateur: str) -> str:
-    if ollama is None:
-        return ""
-    today = datetime.now().date()
-    date_str = today.strftime("%d/%m/%Y")
-    system_prompt = (
-        "Tu es spécialisé dans la recherche d'informations sur Internet et travail "
-        "pour des étudiants en cybersécurité."
-    )
-    try:
-        response = ollama.chat(
-            model=MODEL_NAME,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": question_utilisateur.strip()},
-            ],
-        )
-        return response["message"]["content"].strip()
-    except Exception:
-        return ""
-
-def recherche_serper(query: str, max_results: int) -> list[str]:
-    url_api = "https://google.serper.dev/search"
-    headers = {"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"}
-    payload = {"q": query}
-    try:
-        resp = requests.post(url_api, headers=headers, json=payload, timeout=10)
-        resp.raise_for_status()
-    except requests.RequestException:
-        return []
-    data = resp.json()
-    liens = []
-    if "organic" in data and isinstance(data["organic"], list):
-        for item in data["organic"][:max_results]:
-            if "link" in item:
-                liens.append(item["link"])
-    return liens
-
-
-def recuperer_contenu_site(url: str) -> str:
-    headers = {"User-Agent": "Mozilla/5.0"}
-    try:
-        resp = requests.get(url, headers=headers, timeout=10)
-        resp.raise_for_status()
-    except requests.RequestException:
-        return ""
-    soup = BeautifulSoup(resp.text, "html.parser")
-    for tag in soup([
-        "script",
-        "style",
-        "noscript",
-        "header",
-        "footer",
-        "nav",
-        "aside",
-    ]):
-        tag.decompose()
-    textes = soup.stripped_strings
-    return "\n".join(textes)[:50000]
-
-
-def synthese_contenu(question_initiale: str, url: str, contenu_site: str) -> str:
-    if ollama is None:
-        return ""
-    system_prompt = "Tu es un expert très compétent chargé de répondre en utilisant les fragments d'informations donnés."
-    user_prompt = f"Question: {question_initiale}\nURL: {url}\nContenu:\n{contenu_site}"
-    try:
-        response = ollama.chat(
-            model=MODEL_NAME,
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
-        )
-        return response["message"]["content"].strip()
-    except Exception:
-        return ""
-
-def generate_answer(question: str) -> str:
-    if ollama is None:
-        return ""
-    requete = generer_requete_web(question)
-    if not requete or "#impossible#" in requete:
-        return ""
-    liens = recherche_serper(requete, NB_SITES_MAX)
-    for url in liens:
-        contenu = recuperer_contenu_site(url)
-        if contenu:
-            rep = synthese_contenu(question, url, contenu)
-            if rep:
-                return rep
-    return ""
 
 class User(Base):
     __tablename__ = "users"
@@ -195,8 +96,9 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
 def login(user: UserLogin, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.email == user.email).first()
     if not db_user or not verify_password(user.password, db_user.password):
-        raise HTTPException(status_code=400, detail="Invalid credentials")
+        raise HTTPException(status_code=400, detail="Email ou mot de passe incorrect")
     token = str(db_user.id)
+    
     return {"message": "Logged in", "user_id": db_user.id, "token": token}
 
 class SendMessage(BaseModel):
@@ -204,13 +106,12 @@ class SendMessage(BaseModel):
     content: str
     use_web: bool = True
 
-# Renvoyer la dernière date des conversations pour tri futur 
 @app.get("/conversations")
 def list_conversations(
     user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
     convs = db.query(Conversation).filter(Conversation.user_id == user.id).all()
-    return [{"id": c.id, "title": c.title} for c in convs]
+    return [{"id": c.id, "title": c.title, "last_update": c.last_update} for c in convs]
 
 
 @app.get("/chat/{conversation_id}")
@@ -239,8 +140,7 @@ def get_chat(
 def send_message(
     payload: SendMessage,
     user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    web: bool = False, # TODO default False and add non web search
+    db: Session = Depends(get_db)
 ):
     if payload.conversation_id:
         conv = (
@@ -264,7 +164,11 @@ def send_message(
     db.commit()
     db.refresh(user_msg)
 
-    answer = generate_answer(payload.content)
+    if payload.use_web:
+        answer = web.recherche_web(payload.content)
+    else:
+        answer = ""
+
     assistant_msg = Message(conversation_id=conv.id, role="assistant", content=answer)
     db.add(assistant_msg)
     conv.last_update = datetime.now(timezone.utc)

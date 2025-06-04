@@ -1,15 +1,14 @@
-# ----------------------------------------------------------------
-# IMPORTATIONS
-# ----------------------------------------------------------------
+import ollama
 from datetime import datetime
 import logging
 import requests
 from bs4 import BeautifulSoup
-import ollama
 
 # ----------------------------------------------------------------
-# CONSTANTES & PROMPTS
+#                       RECHERCHER WEB
 # ----------------------------------------------------------------
+
+# CONSTANTES & PROMPTS
 SERPER_API_KEY = "3ac3421edc9038fe814fcf282616bd4c93e5999d"
 MODEL_NAME = "granite3.1-dense:latest"
 NB_SITES_MAX = 3
@@ -101,13 +100,12 @@ RÈGLES IMPÉRATIVES
 5. N’emploie ni politesse superflue, ni excuses, ni exemples hors sujet.
 """.strip()
 
-# ----------------------------------------------------------------
+
 # NETTOYER LA REQUETE SERPER
-# ----------------------------------------------------------------
 def nettoyer_requete_pour_serper(raw_query: str) -> str:
     """
     Remplace les caractères qui peuvent poser problème dans la requête 
-    pour l’API Serper (Google Search).
+    pour l’API Serper.
     """
     q = raw_query
     for c in ["_", "-", ":", '"', "'"]:
@@ -115,9 +113,7 @@ def nettoyer_requete_pour_serper(raw_query: str) -> str:
     return q.strip()
 
 
-# ----------------------------------------------------------------
 # 1. GÉNÉRER LA REQUÊTE WEB
-# ----------------------------------------------------------------
 def generer_requete_web(question_utilisateur: str, nb_retries: int = 3) -> str:
     """
     Génère une requête web à partir de la question de l'utilisateur
@@ -144,9 +140,8 @@ def generer_requete_web(question_utilisateur: str, nb_retries: int = 3) -> str:
     return requete
 
 
-# ----------------------------------------------------------------
+
 # 2. RECHERCHE SERPER
-# ----------------------------------------------------------------
 def recherche_serper(query: str, max_results: int, question: str) -> list[str]:
     """
     Appelle l'API Serper (Google Search) pour la requête 'query' 
@@ -192,9 +187,8 @@ def recherche_serper(query: str, max_results: int, question: str) -> list[str]:
     return liens
 
 
-# ----------------------------------------------------------------
+
 # 3. RÉCUPÉRER LE CONTENU D’UN SITE
-# ----------------------------------------------------------------
 def recuperer_contenu_site(url: str) -> str:
     """
     Télécharge la page à l'URL donnée et extrait le texte visible,
@@ -217,9 +211,9 @@ def recuperer_contenu_site(url: str) -> str:
     return contenu[:50000]
 
 
-# ----------------------------------------------------------------
+
 # 4 SYNTHÈSE DU CONTENU
-# ----------------------------------------------------------------
+
 def synthese_contenu(question_initiale: str, url: str, contenu_site: str) -> str:
     """
     Envoie au LLM la question initiale, l’URL et le contenu extrait.
@@ -254,9 +248,8 @@ Donne toutes les sources à la fin du prompt.
         return ""
 
 
-# ----------------------------------------------------------------
+
 # RÉPONSE FINALE FUSIONNÉE
-# ----------------------------------------------------------------
 def reponse_finale(question_initiale: str, syntheses: list[str]) -> str:
     """
     Combine les synthèses pour rédiger une réponse finale
@@ -290,63 +283,57 @@ Rédige maintenant la réponse finale selon les règles imposées.
         return ""
 
 
-# ----------------------------------------------------------------
-# 8. MAIN
-# ----------------------------------------------------------------
-def main():
-    try:
-        question = input("Question de l'utilisateur : ").strip()
-        if not question:
-            print("La question est vide. Fin du programme.")
-            return
 
-        # 1) Générer la requête web via LLaMA
-        requete = generer_requete_web(question)
-        logger.info(f"Requête générée : {requete}")
-        if not requete or "#impossible#" in requete:
-            print("Impossible de générer la requête web.")
-            return
+# 8. FONCTION PRINCIPALE RECHERCHE WEB
+def recherche_web(question: str) -> str:
 
-        # 2) Recherche Serper
-        liens = recherche_serper(requete, NB_SITES_MAX, question)
-        if not liens:
-            print("Aucun lien trouvé ; fin du programme.")
-            return
+    if not question:
+        print("RECHERCHE WEB : La question est vide. Fin de la recherche.")
+        return "Les recherches effectuées n’ont pas permis d’obtenir une réponse satisfaisante à votre question."
 
-        print(f"\n[Liens trouvés] : {len(liens)} site(s)")
-        for idx, lien in enumerate(liens, start=1):
-            print(f"{idx}. {lien}")
+    # 1) Générer la requête web via LLaMA
+    requete = generer_requete_web(question)
+    logger.info(f"Requête générée : {requete}")
+    if not requete or "#impossible#" in requete:
+        print("RECHERCHE WEB : Impossible de générer la requête web.")
+        return "Les recherches effectuées n’ont pas permis d’obtenir une réponse satisfaisante à votre question."
 
-        # 3) Récupérer et synthétiser
-        syntheses: list[str] = []
-        for idx, url in enumerate(liens, start=1):
-            print(f"\n--- Site {idx} : {url} ---")
-            contenu = recuperer_contenu_site(url)
-            if not contenu:
-                print(f"Impossible de récupérer le contenu du site {url}.")
-                continue
+    # 2) Recherche Serper
+    liens = recherche_serper(requete, NB_SITES_MAX, question)
+    if not liens:
+        print("RECHERCHE WEB : Aucun lien trouvé. Fin de la recherche.")
+        return "Les recherches effectuées n’ont pas permis d’obtenir une réponse satisfaisante à votre question."
 
-            logger.info(f"Contenu récupéré (~{len(contenu)} caractères)")
-            synth = synthese_contenu(question, url, contenu)
-            if synth:
-                print(f"\n=== Synthèse pour le site {idx} ===\n{synth}")
-                syntheses.append(synth)
-            else:
-                print(f"Aucune synthèse générée pour {url}.")
+    print(f"\n[Liens trouvés] : {len(liens)} site(s)")
+    for idx, lien in enumerate(liens, start=1):
+        print(f"{idx}. {lien}")
 
-        # 4) Réponse finale (si au moins une synthèse)
-        if syntheses:
-            print("\n###############################")
-            print("#  RÉPONSE FINALE FUSIONNÉE  #")
-            print("###############################\n")
-            final_answer = reponse_finale(question, syntheses)
-            print(final_answer)
+    # 3) Récupérer et synthétiser
+    syntheses: list[str] = []
+    for idx, url in enumerate(liens, start=1):
+        print(f"\n--- Site {idx} : {url} ---")
+        contenu = recuperer_contenu_site(url)
+        if not contenu:
+            print(f"RECHERCHE WEB : Impossible de récupérer le contenu du site {url}.")
+            continue
+
+        logger.info(f"Contenu récupéré (~{len(contenu)} caractères)")
+        synth = synthese_contenu(question, url, contenu)
+        if synth:
+            print(f"\n=== Synthèse pour le site {idx} ===\n{synth}")
+            syntheses.append(synth)
         else:
-            print("Aucune synthèse exploitable ; réponse finale non générée.")
+            print(f"Aucune synthèse générée pour {url}.")
 
-    except RuntimeError as err:
-        print(f"Une erreur est survenue : {err}")
+    # 4) Réponse finale (si au moins une synthèse)
+    if syntheses:
+        print("\n###############################")
+        print("#        RÉPONSE FINALE       #")
+        print("###############################\n")
+        final_answer = reponse_finale(question, syntheses)
+        print(final_answer)
+    else:
+        print("Aucune synthèse exploitable ; réponse finale non générée.")
+    return final_answer if syntheses else "Les recherches effectuées n’ont pas permis d’obtenir une réponse satisfaisante à votre question."
 
 
-if __name__ == "__main__":
-    main()
