@@ -136,7 +136,7 @@ def get_chat(
         .all()
     )
     
-    return {[{"role": m.role, "content": m.content} for m in messages]}
+    return [{"role": m.role, "content": m.content} for m in messages]
 
 @app.post("/send")
 def send_message(
