@@ -2,9 +2,6 @@ fastapi
 uvicorn
 sqlalchemy
 psycopg2-binary
-passlib[bcrypt]
-requests
-beautifulsoup4
 
 pytest
 httpx<0.25
