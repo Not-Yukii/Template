@@ -8,3 +8,8 @@ beautifulsoup4
 
 pytest
 httpx<0.25
+psycopg
+ollama
+langchain-postgres
+langchain-community
+langchain-ollama
