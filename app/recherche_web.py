@@ -12,6 +12,7 @@ from bs4 import BeautifulSoup
 SERPER_API_KEY = "3ac3421edc9038fe814fcf282616bd4c93e5999d"
 MODEL_NAME = "granite3.1-dense:8b"
 NB_SITES_MAX = 3
+VERBOSE = False
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -288,47 +289,58 @@ Rédige maintenant la réponse finale selon les règles imposées.
 def recherche_web(question: str) -> str:
 
     if not question:
-        print("RECHERCHE WEB : La question est vide. Fin de la recherche.")
+        if VERBOSE:
+            print("RECHERCHE WEB : La question est vide. Fin de la recherche.")
         return "Les recherches effectuées n’ont pas permis d’obtenir une réponse satisfaisante à votre question."
 
     # 1) Générer la requête web via LLaMA
     requete = generer_requete_web(question)
     logger.info(f"Requête générée : {requete}")
     if not requete or "#impossible#" in requete:
-        print("RECHERCHE WEB : Impossible de générer la requête web.")
+        if VERBOSE:
+            print("RECHERCHE WEB : Impossible de générer la requête web.")
         return "Les recherches effectuées n’ont pas permis d’obtenir une réponse satisfaisante à votre question."
 
     # 2) Recherche Serper
     liens = recherche_serper(requete, NB_SITES_MAX, question)
     if not liens:
-        print("RECHERCHE WEB : Aucun lien trouvé. Fin de la recherche.")
+        if VERBOSE:
+            print("RECHERCHE WEB : Aucun lien trouvé. Fin de la recherche.")
         return "Les recherches effectuées n’ont pas permis d’obtenir une réponse satisfaisante à votre question."
 
-    print(f"\n[Liens trouvés] : {len(liens)} site(s)")
+    if VERBOSE:
+        print(f"\n[Liens trouvés] : {len(liens)} site(s)")
     for idx, lien in enumerate(liens, start=1):
         print(f"{idx}. {lien}")
 
     # 3) Récupérer et synthétiser
     syntheses: list[str] = []
     for idx, url in enumerate(liens, start=1):
-        print(f"\n--- Site {idx} : {url} ---")
+        if VERBOSE:
+            print(f"\n--- Site {idx} : {url} ---")
         contenu = recuperer_contenu_site(url)
         if not contenu:
-            print(f"RECHERCHE WEB : Impossible de récupérer le contenu du site {url}.")
+            if VERBOSE:
+                print(f"RECHERCHE WEB : Impossible de récupérer le contenu du site {url}.")
             continue
 
-        logger.info(f"Contenu récupéré (~{len(contenu)} caractères)")
+        if VERBOSE:
+            print(f"RECHERCHE WEB : Contenu récupéré (~{len(contenu)} caractères)\nGénération de la synthèse en cours...")
         synth = synthese_contenu(question, url, contenu)
         if synth:
-            print(f"\n=== Synthèse pour le site {idx} ===\n{synth}")
+            if VERBOSE:
+                print(f"Synthèse générée.")
+            # print(f"\n=== Synthèse pour le site {idx} ===\n{synth}")
             syntheses.append(synth)
         else:
-            print(f"Aucune synthèse générée pour {url}.")
+            if VERBOSE:
+                print(f"Aucune synthèse générée pour {url}.")
+
 
     # 4) Réponse finale (si au moins une synthèse)
     if syntheses:
-        print("\n###############################")
-        print("#        RÉPONSE FINALE       #")
+        # print("\n###############################")
+        # print("#        RÉPONSE FINALE       #")
         print("###############################\n")
         final_answer = reponse_finale(question, syntheses)
         print(final_answer)

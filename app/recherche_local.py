@@ -1,25 +1,24 @@
-import psycopg2
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.vectorstores import PGVector
+import psycopg
+from langchain_postgres.vectorstores import PGVector
 from langchain_community.utilities import SQLDatabase
+from langchain_ollama import OllamaEmbeddings
 from sqlalchemy import create_engine
 from ollama import chat
 
 # --- CONSTantes de connexion PostgreSQL
-DB_URI = "postgresql+psycopg2://postgres:Admin@localhost:5432/test"
+DB_URI = "postgresql+psycopg://postgres:Admin@localhost:5432/test"
 engine = create_engine(DB_URI, echo=False)
 
 # --- Module d'embeddings (Sentence-Transformers)
-hf_embeddings = HuggingFaceEmbeddings(
-    model_name="sentence-transformers/all-MiniLM-L6-v2"
+ollama_embeddings = OllamaEmbeddings(
+    model="granite3.1-dense:8b"
 )
 
 # --- Vectorstore pour pgvector
 vectorstore = PGVector(
-    connection_string=DB_URI,
-    embedding_function=hf_embeddings, # objet complet
-    collection_name="memories",       # nom de la collection interne
-    embedding_length=384              # dimension de l'embedding
+    connection=DB_URI,
+    embeddings=ollama_embeddings, # objet complet
+    collection_name="memories"
 )
 
 MODEL_NAME = "granite3.1-dense:8b"
@@ -33,7 +32,7 @@ def insert_message_and_memory(conversation_id: int, role: str, content: str) -> 
     3) Insère dans 'memories'
     4) Retourne le message_id.
     """
-    conn = psycopg2.connect(
+    conn = psycopg.connect(
         dbname="test", user="postgres", password="Admin", host="localhost"
     )
     cursor = conn.cursor()
@@ -58,29 +57,6 @@ def insert_message_and_memory(conversation_id: int, role: str, content: str) -> 
     conn.close()
     return message_id
 
-
-def get_conversation_history(conversation_id: int):
-    """
-    Récupère l'historique des messages pour une conversation donnée.
-    """
-    conn = psycopg2.connect(
-        dbname="test", user="postgres", password="Admin", host="localhost"
-    )
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT role, content, created_at
-        FROM messages
-        WHERE conversation_id = %s
-        ORDER BY created_at;
-        """,
-        (conversation_id,)
-    )
-    rows = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    return rows  # liste de tuples (role, content, created_at)
-
 def retrieve_memories(conversation_id: int, query: str, k: int = 5) -> list[str]:
     """
     Récupère les k passages les plus similaires DANS LA MÊME conversation.
@@ -91,7 +67,7 @@ def retrieve_memories(conversation_id: int, query: str, k: int = 5) -> list[str]
             "filter": {"conversation_id": conversation_id}
         }
     )
-    docs = retriever.get_relevant_documents(query)
+    docs = retriever.invoke(query)
     # docs est une liste d’objets Document, dont `page_content` est la colonne `content` de memories
     return [doc.page_content for doc in docs]
 

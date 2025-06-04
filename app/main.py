@@ -8,7 +8,6 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from datetime import datetime, timezone
 import os
 from passlib.context import CryptContext
-import ollama
 from . import recherche_web as web
 from . import recherche_titre as titre
 from . import recherche_local as local
