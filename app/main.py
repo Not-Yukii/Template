@@ -7,10 +7,7 @@ import os
 from passlib.context import CryptContext
 import requests
 from bs4 import BeautifulSoup
-try:
-    import ollama
-except Exception:  # pragma: no cover - optional dependency
-    ollama = None
+import ollama
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
@@ -22,14 +19,11 @@ Base = declarative_base()
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
-
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
-
 
 SERPER_API_KEY = "3ac3421edc9038fe814fcf282616bd4c93e5999d"
 MODEL_NAME = "llama3.1:8b"
@@ -139,8 +133,8 @@ class Conversation(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     title = Column(String)
-    started_at = Column(DateTime, default=datetime.utcnow)
-    last_update = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime, default=datetime.time)
+    last_update = Column(DateTime, default=datetime.time)
 
 class Message(Base):
     __tablename__ = "messages"
@@ -148,7 +142,7 @@ class Message(Base):
     conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False)
     role = Column(String)
     content = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.time)
 
 Base.metadata.create_all(bind=engine)
 
@@ -205,7 +199,6 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
 class SendMessage(BaseModel):
     conversation_id: int | None = None
     content: str
-
 
 @app.get("/conversations")
 def list_conversations(

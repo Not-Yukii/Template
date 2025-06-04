@@ -36,7 +36,6 @@ main.app.dependency_overrides[main.get_db] = override_get_db
 
 client = TestClient(main.app)
 
-
 def test_register_and_login():
     response = client.post("/register", json={"email": "test@example.com", "password": "secret"})
     assert response.status_code == 200
