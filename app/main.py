@@ -142,7 +142,6 @@ class Conversation(Base):
     started_at = Column(DateTime, default=datetime.utcnow)
     last_update = Column(DateTime, default=datetime.utcnow)
 
-
 class Message(Base):
     __tablename__ = "messages"
     id = Column(Integer, primary_key=True)
@@ -169,7 +168,6 @@ def get_db():
         yield db
     finally:
         db.close()
-
 
 def get_current_user(
     authorization: str = Header(..., alias="Authorization"),
