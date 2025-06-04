@@ -1,3 +1,5 @@
+DROP TABLE IF EXISTS memories, messages, conversations, users CASCADE;
+
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
   email TEXT UNIQUE,

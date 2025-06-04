@@ -10,11 +10,13 @@ import os
 from passlib.context import CryptContext
 import ollama
 from . import recherche_web as web
+from . import recherche_titre as titre
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql+psycopg2://postgres:Admin@localhost:5432/test",
 )
+
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -104,7 +106,7 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
 class SendMessage(BaseModel):
     conversation_id: int | None = None
     content: str
-    use_web: bool = True
+    use_web: bool
 
 @app.get("/conversations")
 def list_conversations(
@@ -154,7 +156,7 @@ def send_message(
         if not conv:
             raise HTTPException(status_code=404, detail="Conversation not found")
     else:
-        conv = Conversation(user_id=user.id, title=payload.content[:30])
+        conv = Conversation(user_id=user.id, title=titre.generate_titre(payload.content))
         db.add(conv)
         db.commit()
         db.refresh(conv)

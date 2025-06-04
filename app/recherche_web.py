@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 
 # CONSTANTES & PROMPTS
 SERPER_API_KEY = "3ac3421edc9038fe814fcf282616bd4c93e5999d"
-MODEL_NAME = "granite3.1-dense:latest"
+MODEL_NAME = "granite3.1-dense:8b"
 NB_SITES_MAX = 3
 
 logging.basicConfig(level=logging.INFO)
