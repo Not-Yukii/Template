@@ -45,6 +45,7 @@ def test_register_and_login():
     response = client.post("/login", json={"email": "test@example.com", "password": "secret"})
     assert response.status_code == 200
     assert response.json()["message"] == "Logged in"
+    assert "token" in response.json()
 
 
 def test_duplicate_register():
