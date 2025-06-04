@@ -60,3 +60,44 @@ def test_invalid_login():
     response = client.post("/login", json={"email": "login@example.com", "password": "bad"})
     assert response.status_code == 400
     assert response.json()["detail"] == "Invalid credentials"
+
+
+def test_send_and_chat(monkeypatch):
+    client.post("/register", json={"email": "conv@example.com", "password": "pw"})
+    login_resp = client.post("/login", json={"email": "conv@example.com", "password": "pw"})
+    token = login_resp.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    monkeypatch.setattr(main, "generate_answer", lambda q: "answer")
+
+    resp = client.post("/send", json={"content": "hello"}, headers=headers)
+    assert resp.status_code == 200
+    conv_id = resp.json()["conversation_id"]
+    assert resp.json()["response"] == "answer"
+
+    resp = client.get("/conversations", headers=headers)
+    assert resp.status_code == 200
+    assert any(c["id"] == conv_id for c in resp.json())
+
+    resp = client.get(f"/chat/{conv_id}", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json() == [
+        {"role": "user", "content": "hello"},
+        {"role": "assistant", "content": "answer"},
+    ]
+
+
+def test_send_nonexistent_conversation(monkeypatch):
+    client.post("/register", json={"email": "noc@example.com", "password": "pw"})
+    login_resp = client.post("/login", json={"email": "noc@example.com", "password": "pw"})
+    token = login_resp.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    monkeypatch.setattr(main, "generate_answer", lambda q: "ans")
+
+    resp = client.post(
+        "/send",
+        json={"conversation_id": 9999, "content": "hi"},
+        headers=headers,
+    )
+    assert resp.status_code == 404
