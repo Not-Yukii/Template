@@ -16,6 +16,12 @@ Start the API with `uvicorn`:
 uvicorn app.main:app --reload
 ```
 
+ou
+
+```bash
+python -m uvicorn app.main:app --reload
+```
+
 The API now exposes the following endpoints:
 
 - `POST /register` - Create a new user with `email` and `password`. The password is hashed before storing.

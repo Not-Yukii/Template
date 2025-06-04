@@ -156,6 +156,7 @@ def send_message(
         if not conv:
             raise HTTPException(status_code=404, detail="Conversation not found")
     else:
+        print(payload.content)
         conv = Conversation(user_id=user.id, title=titre.generate_title(payload.content))
         db.add(conv)
         db.commit()
