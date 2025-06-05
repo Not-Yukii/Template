@@ -10,7 +10,7 @@ import os
 from passlib.context import CryptContext
 from . import recherche_web as web
 from . import recherche_titre as titre
-from . import recherche_local as local
+from . import recherche_local_v2 as local
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
