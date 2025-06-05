@@ -10,7 +10,7 @@ from langchain.schema import Document
 from langchain_community.document_loaders.pdf import PyPDFDirectoryLoader
 from langchain_community.document_loaders.markdown import UnstructuredMarkdownLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.llms.ollama import Ollama
+from langchain_ollama import OllamaLLM
 from langchain_ollama import OllamaEmbeddings
 from langchain_postgres.vectorstores import PGVector
 from langchain_community.utilities import SQLDatabase
@@ -67,7 +67,7 @@ def get_existing_kb_ids(conn, collection_name):
         WHERE collection_id = :collection_uuid
     """)
     rows = conn.execute(sql_get_embeddings, {"collection_uuid": collection_uuid}).fetchall()
-    return [row["id"] for row in rows]
+    return [row[0] for row in rows]
 
 def calculate_chunk_ids(chunks: List[Document]) -> List[Document]:
     """Generate stable deterministic IDs: ``source:page:chunk_index``."""
@@ -128,7 +128,7 @@ def contextualize_chunks() -> List[Document]:
         length_function=len,
         is_separator_regex=False,
     )
-    llm_ctx = Ollama(model=MODEL_NAME)
+    llm_ctx = OllamaLLM(model=MODEL_NAME)
 
     chunks_out: List[Document] = []
 

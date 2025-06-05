@@ -166,7 +166,7 @@ def send_message(
         answer = web.recherche_web(payload.content)
         local.insert_message_and_memory(conv.id, "assistant", answer)
     else:
-        answer = local.answer_with_memory(payload.content, conv.id, k=5)
+        answer = local.answer_with_memory(payload.content, conv.id)
 
     conv.last_update = datetime.now(timezone.utc)
     db.commit()
