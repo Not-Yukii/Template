@@ -11,7 +11,7 @@ SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
 os.environ["DATABASE_URL"] = SQLALCHEMY_DATABASE_URL
 
 # Import the app and models
-import app.main as main
+import app.main_v2 as main_v2
 
 # Create a new SQLite engine and session for testing
 engine = create_engine(
@@ -20,8 +20,8 @@ engine = create_engine(
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Recreate the tables on the test database
-main.Base.metadata.drop_all(bind=engine)
-main.Base.metadata.create_all(bind=engine)
+main_v2.Base.metadata.drop_all(bind=engine)
+main_v2.Base.metadata.create_all(bind=engine)
 
 # Dependency override for testing
 
@@ -32,9 +32,9 @@ def override_get_db():
     finally:
         db.close()
 
-main.app.dependency_overrides[main.get_db] = override_get_db
+main_v2.app.dependency_overrides[main_v2.get_db] = override_get_db
 
-client = TestClient(main.app)
+client = TestClient(main_v2.app)
 
 def test_register_and_login():
     response = client.post("/register", json={"email": "test@example.com", "password": "secret"})
@@ -76,7 +76,7 @@ def test_send_and_chat(monkeypatch):
     token = login_resp.json()["token"]
     headers = {"Authorization": f"Bearer {token}"}
 
-    monkeypatch.setattr(main, "generate_answer", lambda q: "answer")
+    monkeypatch.setattr(main_v2, "generate_answer", lambda q: "answer")
 
     resp = client.post("/send", json={"content": "hello"}, headers=headers)
     assert resp.status_code == 200
@@ -94,14 +94,13 @@ def test_send_and_chat(monkeypatch):
         {"role": "assistant", "content": "answer"},
     ]
 
-
 def test_send_nonexistent_conversation(monkeypatch):
     client.post("/register", json={"email": "noc@example.com", "password": "pw"})
     login_resp = client.post("/login", json={"email": "noc@example.com", "password": "pw"})
     token = login_resp.json()["token"]
     headers = {"Authorization": f"Bearer {token}"}
 
-    monkeypatch.setattr(main, "generate_answer", lambda q: "ans")
+    monkeypatch.setattr(main_v2, "generate_answer", lambda q: "ans")
 
     resp = client.post(
         "/send",

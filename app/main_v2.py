@@ -1,13 +1,7 @@
 # ----------------------------------------------------------------
 # IMPORTATIONS
 # ----------------------------------------------------------------
-from fastapi import FastAPI, Depends, HTTPException, Header, Body, UploadFile, File
-from langchain_community.document_loaders.pdf import PyPDFLoader
-from langchain_community.document_loaders.markdown import UnstructuredMarkdownLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain.schema import Document
-import tempfile, shutil
-from pathlib import Path
+from fastapi import FastAPI, Depends, HTTPException, Header
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
@@ -145,26 +139,16 @@ def get_chat(
     return [{"role": m.role, "content": m.content} for m in messages]
 
 @app.post("/send")
-async def send_message(
-    content: str = Body(...),
-    use_web: bool = Body(False),
-    conversation_id: int | None = Body(None),
-    file: UploadFile | None = File(None),
+def send_message(
+    payload: SendMessage,
     user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db)
 ):
-    """
-    - content   : le texte du message utilisateur
-    - use_web   : bool (est-ce qu’on veut faire une recherche web ?)
-    - conversation_id : si existante, on écrit dans cette conv sinon on crée une nouvelle conv.
-    - file      : UploadFile facultatif (.pdf, .txt, .md). Si fourni, on extrait le texte
-                  et on l’insère dans memories pour cette conversation, avant de traiter content.
-    """
-    if conversation_id != -1:
+    if payload.conversation_id:
         conv = (
             db.query(Conversation)
             .filter(
-                Conversation.id == conversation_id,
+                Conversation.id == payload.conversation_id,
                 Conversation.user_id == user.id,
             )
             .first()
@@ -172,89 +156,18 @@ async def send_message(
         if not conv:
             raise HTTPException(status_code=404, detail="Conversation not found")
     else:
-        title = titre.generate_title(content)
-        conv = Conversation(user_id=user.id, title=title)
+        conv = Conversation(user_id=user.id, title=titre.generate_title(payload.content))
         db.add(conv)
         db.commit()
         db.refresh(conv)
-
-    if file is not None:
-        filename = file.filename
-        suffix = Path(filename).suffix.lower()
-        if suffix not in {".pdf", ".txt", ".md", ".markdown"}:
-            raise HTTPException(status_code=400, detail="Extension non autorisée")
-
-        tmp_dir = tempfile.mkdtemp()
-        tmp_path = os.path.join(tmp_dir, filename)
-        try:
-            with open(tmp_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Erreur stockage temporaire: {e}")
-
-        try:
-            if suffix == ".pdf":
-                loader = PyPDFLoader(tmp_path)
-                docs = loader.load()
-                file_text = "\n".join([d.page_content for d in docs])
-            elif suffix == ".md" or suffix == ".markdown":
-                loader = UnstructuredMarkdownLoader(tmp_path)
-                docs = loader.load()
-                file_text = "\n".join([d.page_content for d in docs])
-            elif suffix == ".txt":
-                with open(tmp_path, "r", encoding="utf-8") as ftxt:
-                    file_text = ftxt.read()
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Erreur extraction contenu: {e}")
-
-        local.insert_message_and_memory(conv.id, "file", file_text)
-
-        try:
-            shutil.rmtree(tmp_dir)
-        except:
-            pass
-        
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1200,
-            chunk_overlap=120,
-            length_function=len,
-            is_separator_regex=False,
-        )
-        
-        virtual_doc = Document(page_content=file_text, metadata={})
-        chunks = splitter.split_documents([virtual_doc])
-
-        for ch in chunks:
-            ch.page_content = f"<document>\n{ch.page_content}\n</document>"
-            local.insert_message_and_memory(conv.id, "file", ch.page_content)
-
-    user_msg_id = local.insert_message_and_memory(conv.id, "user", content)
-
-    if use_web:
-        answer = web.recherche_web(content)
+    
+    if payload.use_web:
+        local.insert_message_and_memory(conv.id, "user", payload.content)
+        answer = web.recherche_web(payload.content)
         local.insert_message_and_memory(conv.id, "assistant", answer)
     else:
-        answer = local.answer_with_memory(content, conv.id)
+        answer = local.answer_with_memory(payload.content, conv.id)
 
     conv.last_update = datetime.now(timezone.utc)
     db.commit()
-
     return {"conversation_id": conv.id, "response": answer}
-
-@app.post("/delete_conversation/{conversation_id}")
-def delete_conversation(
-    conversation_id: int,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    conv = (
-        db.query(Conversation)
-        .filter(Conversation.id == conversation_id, Conversation.user_id == user.id)
-        .first()
-    )
-    if not conv:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-
-    db.delete(conv)
-    db.commit()
-    return {"message": "Conversation deleted"}
