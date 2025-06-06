@@ -26,6 +26,8 @@ from fastapi import status
 from jose import JWTError
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from contextlib import asynccontextmanager
+from typing import List, Optional
+from fastapi import Form, File, UploadFile
 from . import recherche_web as web
 from . import recherche_titre as titre
 from . import recherche_local as local
@@ -193,7 +195,6 @@ def list_conversations(
     convs = db.query(Conversation).filter(Conversation.user_id == user.id).all()
     return [{"id": c.id, "title": c.title, "last_update": c.last_update} for c in convs]
 
-
 @app.get("/chat/{conversation_id}")
 def get_chat(
     conversation_id: int,
@@ -218,10 +219,10 @@ def get_chat(
 
 @app.post("/send")
 async def send_message(
-    content: str = Body(...),
-    use_web: bool = Body(False),
-    conversation_id: int | None = Body(None),
-    file: UploadFile | None = File(None),
+    content: str = Form(...),
+    use_web: bool = Form(False),
+    conversation_id: Optional[int] = Form(None),
+    files: Optional[List[UploadFile]] = File(None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -250,55 +251,53 @@ async def send_message(
         db.commit()
         db.refresh(conv)
 
-    if file is not None:
-        filename = file.filename
-        suffix = Path(filename).suffix.lower()
-        if suffix not in {".pdf", ".txt", ".md", ".markdown"}:
-            raise HTTPException(status_code=400, detail="Extension non autorisée")
+    if files:
+        for up_file in files:
+            filename = up_file.filename
+            suffix = Path(filename).suffix.lower()
+            if suffix not in {".pdf", ".txt", ".md", ".markdown"}:
+                raise HTTPException(status_code=400, detail="Extension non autorisée")
 
-        tmp_dir = tempfile.mkdtemp()
-        tmp_path = os.path.join(tmp_dir, filename)
-        try:
+            tmp_dir = tempfile.mkdtemp()
+            tmp_path = os.path.join(tmp_dir, filename)
             with open(tmp_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Erreur stockage temporaire: {e}")
+                shutil.copyfileobj(up_file.file, buffer)
+                
+            try:
+                if suffix == ".pdf":
+                    loader = PyPDFLoader(tmp_path)
+                    docs = loader.load()
+                    file_text = "\n".join([d.page_content for d in docs])
+                elif suffix == ".md" or suffix == ".markdown":
+                    loader = UnstructuredMarkdownLoader(tmp_path)
+                    docs = loader.load()
+                    file_text = "\n".join([d.page_content for d in docs])
+                elif suffix == ".txt":
+                    with open(tmp_path, "r", encoding="utf-8") as ftxt:
+                        file_text = ftxt.read()
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Erreur extraction contenu: {e}")
 
-        try:
-            if suffix == ".pdf":
-                loader = PyPDFLoader(tmp_path)
-                docs = loader.load()
-                file_text = "\n".join([d.page_content for d in docs])
-            elif suffix == ".md" or suffix == ".markdown":
-                loader = UnstructuredMarkdownLoader(tmp_path)
-                docs = loader.load()
-                file_text = "\n".join([d.page_content for d in docs])
-            elif suffix == ".txt":
-                with open(tmp_path, "r", encoding="utf-8") as ftxt:
-                    file_text = ftxt.read()
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Erreur extraction contenu: {e}")
+            local.insert_message_and_memory(conv.id, "file", file_text)
 
-        local.insert_message_and_memory(conv.id, "file", file_text)
+            try:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+            except:
+                pass
+            
+            splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1200,
+                chunk_overlap=120,
+                length_function=len,
+                is_separator_regex=False,
+            )
+            
+            virtual_doc = Document(page_content=file_text, metadata={})
+            chunks = splitter.split_documents([virtual_doc])
 
-        try:
-            shutil.rmtree(tmp_dir)
-        except:
-            pass
-        
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1200,
-            chunk_overlap=120,
-            length_function=len,
-            is_separator_regex=False,
-        )
-        
-        virtual_doc = Document(page_content=file_text, metadata={})
-        chunks = splitter.split_documents([virtual_doc])
-
-        for ch in chunks:
-            ch.page_content = f"<document>\n{ch.page_content}\n</document>"
-            local.insert_message_and_memory(conv.id, "file", ch.page_content)
+            for ch in chunks:
+                ch.page_content = f"<document>\n{ch.page_content}\n</document>"
+                local.insert_message_and_memory(conv.id, "file", ch.page_content)
 
     user_msg_id = local.insert_message_and_memory(conv.id, "user", content)
 
@@ -330,3 +329,7 @@ def delete_conversation(
     db.delete(conv)
     db.commit()
     return {"message": "Conversation deleted"}
+
+@app.post("/logout")
+def logout():
+    return {"message": "Logged out successfully"}

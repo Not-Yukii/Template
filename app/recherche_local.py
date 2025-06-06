@@ -133,7 +133,7 @@ def contextualize_chunks() -> List[Document]:
     chunks_out: List[Document] = []
 
     for src, pages in grouped.items():
-        full_text = "\n\n".join(p.page_content for p in pages)[:25000]  # cap prompt length
+        full_text = "\n\n".join(p.page_content for p in pages)[:200000]  # cap prompt length
         virtual_doc = Document(page_content=full_text, metadata={"source": src, "page": 0})
         raw_chunks = splitter.split_documents([virtual_doc])
         raw_chunks = calculate_chunk_ids(raw_chunks)

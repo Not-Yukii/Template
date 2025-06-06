@@ -16,3 +16,5 @@ pypdf
 python-jose[cryptography]
 tqdm
 python-multipart
+unstructured
+markdown
