@@ -28,7 +28,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from contextlib import asynccontextmanager
 from . import recherche_web as web
 from . import recherche_titre as titre
-from . import recherche_local_v2 as local
+from . import recherche_local as local
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
