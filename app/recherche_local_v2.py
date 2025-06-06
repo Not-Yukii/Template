@@ -237,17 +237,51 @@ def answer_with_memory(user_input: str, conversation_id: int, k_mem: int = 5, k_
     )
 
     system_msg = {
-        "role": "system",
-        "content": """
-        Tu es un assistant intelligent français qui répond aux questions en prévilégiant les informations fournies dans le contexte.
-        Si nécessaire, bases toi sur le contexte fournis pour formuler ta réponse.
-        """
+    "role": "system",
+    "content": """
+    You are a specialized French-speaking virtual assistant, designed to answer questions by strictly prioritizing the information provided in the context.
+
+    Rules to follow:
+    - ONLY use information from the context if it is directly relevant to the question.
+    - Do NOT provide off-topic or unsolicited information.
+    - Adapt the length of your answer to the level of detail of the question: be concise if the question is simple or vague.
+    - Stay professional and clear.
+
+    Examples:
+
+    Expected behavior:
+    User: Hello!
+    Answer: Hello! I'm a virtual assistant in cybersecurity, at your disposal.
+
+    Behaviour to avoid:
+    User: Hello!
+    Answer: Hello! I'm a virtual assistant in cybersecurity, here to answer your questions. Good cybersecurity practices include [...] (this is off-topic as not requested).
+
+    Your priority is contextual relevance, conciseness, and clarity.
+    Please answer by defaut in French, do not add the English translation unless explicitly requested.
+    """
     }
+
 
     user_msg = {
         "role": "user",
-        "content": f"Contexte récupéré :\n{context_block}\n\nQuestion utilisateur : {user_input}",
+        "content": f"""
+    
+    ### Contexte de conversation (mémoires) :
+    {fmt(mem_passages, "mémoire")}
+    
+    ---
+    
+    ### Question de l'utilisateur :
+    {user_input}
+
+    ---
+
+    ### Contexte global (documents) – à utiliser UNIQUEMENT si pertinent :
+    {fmt(doc_passages, "document")}
+    """.strip()
     }
+
 
     response = ollama_chat(model=MODEL_NAME, messages=[system_msg, user_msg], stream=False)
     assistant_answer = response["message"]["content"]
