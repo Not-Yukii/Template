@@ -13,3 +13,5 @@ langchain-postgres
 langchain-community
 langchain-ollama
 pypdf
+python-jose[cryptography]
+tqdm

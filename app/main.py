@@ -1,3 +1,8 @@
+import sys
+import asyncio
+
+if sys.platform.startswith("win"):
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 # ----------------------------------------------------------------
 # IMPORTATIONS
 # ----------------------------------------------------------------
@@ -14,6 +19,13 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from datetime import datetime, timezone
 import os
 from passlib.context import CryptContext
+from datetime import timedelta
+from jose import JWTError, jwt
+from pydantic import BaseModel
+from fastapi import status
+from jose import JWTError
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from contextlib import asynccontextmanager
 from . import recherche_web as web
 from . import recherche_titre as titre
 from . import recherche_local_v2 as local
@@ -23,10 +35,45 @@ DATABASE_URL = os.getenv(
     "postgresql+psycopg2://postgres:Admin@localhost:5432/test",
 )
 
+SECRET_KEY = os.getenv(
+    "SECRET_KEY",
+    "#Pr0j3tI@2025!"
+)
+
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
+
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+def verify_access_token(token: str) -> int:
+    """
+    Renvoie l'user_id si le token est valide, sinon lève une exception.
+    """
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: int = payload.get("sub")
+        if user_id is None:
+            raise JWTError("Subject manquant")
+        return int(user_id)
+    except JWTError:
+        raise JWTError("Jeton invalide ou expiré")
+    
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def get_password_hash(password: str) -> str:
@@ -59,7 +106,12 @@ class Message(Base):
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await web.get_serper_api_key()
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 class UserCreate(BaseModel):
     email: str
@@ -76,16 +128,31 @@ def get_db():
     finally:
         db.close()
 
+bearer_scheme = HTTPBearer()
+
 def get_current_user(
-    authorization: str = Header(..., alias="Authorization"),
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ):
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid token")
-    token = authorization.split()[1]
-    user = db.query(User).filter(User.id == token).first()
+    """
+    - HTTPBearer extrait « Authorization: Bearer <token> » et met <token> dans credentials.credentials.
+    - On vérifie ensuite le JWT.
+    """
+    token = credentials.credentials
+    try:
+        user_id = verify_access_token(token)
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token invalide ou expiré",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Utilisateur non trouvé",
+        )
     return user
 
 @app.post("/register")
@@ -100,14 +167,20 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
     db.refresh(new_user)
     return {"id": new_user.id, "email": new_user.email}
 
-@app.post("/login")
+@app.post("/login", response_model=Token)
 def login(user: UserLogin, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.email == user.email).first()
     if not db_user or not verify_password(user.password, db_user.password):
-        raise HTTPException(status_code=400, detail="Email ou mot de passe incorrect")
-    token = str(db_user.id)
-    
-    return {"message": "Logged in", "user_id": db_user.id, "token": token}
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Email ou mot de passe incorrect",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": db_user.id}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
 
 class SendMessage(BaseModel):
     conversation_id: int | None = None

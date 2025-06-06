@@ -3,7 +3,7 @@ from datetime import datetime
 import logging
 import requests
 from bs4 import BeautifulSoup
-from serper_tokens import *
+from . import serper_tokens as serp
 
 # ----------------------------------------------------------------
 #                       RECHERCHER WEB
@@ -12,19 +12,21 @@ from serper_tokens import *
 accounts = []
 SERPER_API_KEY = ""
 
-# CONSTANTES & PROMPTS
-with open("app/serper_logins.txt", "r") as f:
-    lines = f.readlines()
-    accounts = lines
-
-for i in range(len(accounts)):
-    email, password, token = accounts[i].split(":")
-    print(f"Email: {email}, Password: {password}, Token: {token}")
-    credits = get_serper_credits(email.strip(), password.strip())
-    print(f"Crédits restants sur Serper.dev : {credits.strip()}")
-    if (int(credits) < 2490):
-        SERVER_API_KEY = token
-        break
+async def get_serper_api_key():
+    global SERPER_API_KEY
+    with open("app/serper_logins.txt", "r") as f:
+        lines = f.readlines()
+        accounts = lines
+    
+    for i in range(len(accounts)):
+        email, password, token = accounts[i].split(":")
+        # print(f"Email: {email}, Password: {password}, Token: {token}")
+        credits = await serp.get_serper_credits(email.strip(), password.strip())
+        # print(f"Crédits restants sur Serper.dev : {credits.strip()}")
+        if (int(credits) < 2490):
+            SERPER_API_KEY = token
+            # print("SERPER_API_KEY:", SERPER_API_KEY)
+            break
 
 MODEL_NAME = "granite3.1-dense:8b"
 NB_SITES_MAX = 6
