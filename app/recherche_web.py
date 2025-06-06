@@ -3,13 +3,29 @@ from datetime import datetime
 import logging
 import requests
 from bs4 import BeautifulSoup
+from serper_tokens import *
 
 # ----------------------------------------------------------------
 #                       RECHERCHER WEB
 # ----------------------------------------------------------------
 
+accounts = []
+SERPER_API_KEY = ""
+
 # CONSTANTES & PROMPTS
-SERPER_API_KEY = "3ac3421edc9038fe814fcf282616bd4c93e5999d"
+with open("app/serper_logins.txt", "r") as f:
+    lines = f.readlines()
+    accounts = lines
+
+for i in range(len(accounts)):
+    email, password, token = accounts[i].split(":")
+    print(f"Email: {email}, Password: {password}, Token: {token}")
+    credits = get_serper_credits(email.strip(), password.strip())
+    print(f"Crédits restants sur Serper.dev : {credits.strip()}")
+    if (int(credits) < 2490):
+        SERVER_API_KEY = token
+        break
+
 MODEL_NAME = "granite3.1-dense:8b"
 NB_SITES_MAX = 6
 VERBOSE = False
