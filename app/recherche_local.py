@@ -222,8 +222,6 @@ def retrieve_documents(query: str, k: int = 4) -> List[str]:
 
 def answer_with_memory(user_input: str, conversation_id: int, k_mem: int = 5, k_docs: int = 5) -> str:
     """Full round‑trip: store Q → retrieve memories + docs → build prompt → LLM."""
-    insert_message_and_memory(conversation_id, "user", user_input)
-
     mem_passages = retrieve_memories(conversation_id, user_input, k=k_mem)
     doc_passages = retrieve_documents(user_input, k=k_docs)
 
