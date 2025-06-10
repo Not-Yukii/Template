@@ -341,7 +341,7 @@ async def delete_conversation(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    conv = asyncio.to_thread(
+    conv = (
         db.query(Conversation)
         .filter(Conversation.id == conversation_id, Conversation.user_id == user.id)
         .first()
