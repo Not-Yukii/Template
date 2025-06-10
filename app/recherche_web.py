@@ -1,3 +1,6 @@
+# import os
+# os.environ["OLLAMA_HOST"] = "http://ollamaProjet4A:11434"
+
 import ollama
 from datetime import datetime
 import logging
@@ -359,11 +362,11 @@ def recherche_web(question: str) -> str:
     if syntheses:
         # print("\n###############################")
         # print("#        RÉPONSE FINALE       #")
-        print("###############################\n")
+        # print("###############################\n")
         final_answer = reponse_finale(question, syntheses)
-        print(final_answer)
-    else:
-        print("Aucune synthèse exploitable ; réponse finale non générée.")
+        # print(final_answer)
+    # else:
+    #     print("Aucune synthèse exploitable ; réponse finale non générée.")
     return final_answer if syntheses else "Les recherches effectuées n’ont pas permis d’obtenir une réponse satisfaisante à votre question."
 
 

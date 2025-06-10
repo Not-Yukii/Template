@@ -1,3 +1,6 @@
+# import os
+# os.environ["OLLAMA_HOST"] = "http://ollamaProjet4A:11434"
+
 from ollama import chat
 
 MODEL_NAME = "llama3.1:8b"

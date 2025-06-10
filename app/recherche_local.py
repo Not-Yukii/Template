@@ -1,4 +1,5 @@
 import os
+# os.environ["OLLAMA_HOST"] = "http://ollamaProjet4A:11434"
 from typing import List, Dict
 import argparse
 
@@ -239,7 +240,7 @@ def search_if_relevant(user_input: str, doc_passages: List[str]) -> bool:
     )
     response = llm.invoke(prompt)
     response = response.strip().lower()
-    print(response)
+    # print(response)
     
     return response
 
@@ -319,7 +320,7 @@ def answer_with_memory(user_input: str, conversation_id: int, k_mem: int = 5, k_
     """.strip()
     }
     
-    print(system_msg + "\n" + user_msg)
+    # print([system_msg, user_msg])
 
     response = ollama_chat(model=MODEL_NAME, messages=[system_msg, user_msg], stream=False)
     assistant_answer = response["message"]["content"]

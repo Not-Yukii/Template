@@ -21,7 +21,6 @@ import os
 from passlib.context import CryptContext
 from datetime import timedelta
 from jose import JWTError, jwt
-from pydantic import BaseModel
 from fastapi import status
 from jose import JWTError
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -32,9 +31,14 @@ from . import recherche_web as web
 from . import recherche_titre as titre
 from . import recherche_local as local
 
+DB_NAME = "test"
+DB_USER = "postgres"
+DB_PASSWORD = "Admin"
+DB_HOST = "localhost"
+
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+psycopg2://postgres:Admin@localhost:5432/test",
+    f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:5432/{DB_NAME}",
 )
 
 SECRET_KEY = os.getenv(
@@ -196,7 +200,7 @@ def list_conversations(
     return [{"id": c.id, "title": c.title, "last_update": c.last_update} for c in convs]
 
 @app.get("/chat/{conversation_id}")
-def get_chat(
+async def get_chat(
     conversation_id: int,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -208,6 +212,7 @@ def get_chat(
     )
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
+
     messages = (
         db.query(Message)
         .filter(Message.conversation_id == conv.id)
@@ -217,6 +222,75 @@ def get_chat(
     
     return [{"role": m.role, "content": m.content} for m in messages]
 
+def _process_upload(up_file: UploadFile, conv_id: int):
+    """
+    Lit un UploadFile, extrait le texte, le découpe puis stocke chaque chunk
+    dans la mémoire vectorielle. 100 % synchrone → à exécuter dans un thread.
+    """
+    suffix = Path(up_file.filename).suffix.lower()
+    if suffix not in {".pdf", ".txt", ".md", ".markdown"}:
+        raise ValueError("Extension non autorisée")
+
+    tmp_dir = tempfile.mkdtemp()
+    tmp_path = os.path.join(tmp_dir, up_file.filename)
+    with open(tmp_path, "wb") as buffer:
+        shutil.copyfileobj(up_file.file, buffer)
+
+    # Extraction -------------------------------------------------------------
+    if suffix == ".pdf":
+        loader = PyPDFLoader(tmp_path)
+        docs = loader.load()
+        file_text = "\n".join(d.page_content for d in docs)
+    elif suffix in {".md", ".markdown"}:
+        loader = UnstructuredMarkdownLoader(tmp_path)
+        docs = loader.load()
+        file_text = "\n".join(d.page_content for d in docs)
+    else:                       # .txt
+        with open(tmp_path, "r", encoding="utf-8") as f:
+            file_text = f.read()
+
+    # Mémoire courte ---------------------------------------------------------
+    local.insert_message_and_memory(conv_id, "file", file_text)
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=250000,
+        chunk_overlap=200,
+        length_function=len,
+        is_separator_regex=False,
+    )
+    virtual_doc = Document(page_content=file_text, metadata={})
+    chunks = splitter.split_documents([virtual_doc])
+
+    for ch in chunks:
+        ch.page_content = (
+            f"<file> Fichier {up_file.filename} :\n{ch.page_content}\n</file>"
+        )
+        local.insert_message_and_memory(conv_id, "file", ch.page_content)
+
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+
+def _get_conv(cid: int, uid: int):
+    with SessionLocal() as s:
+        return (
+            s.query(Conversation)
+             .filter(Conversation.id == cid, Conversation.user_id == uid)
+             .first()
+        )
+        
+def _create_conv(u_id: int, title: str, ts: str):
+    with SessionLocal() as s:
+        conv = Conversation(user_id=u_id, title=title, last_update=ts)
+        s.add(conv)
+        s.commit()
+        s.refresh(conv)
+        return conv
+
+def _touch_conv(cid: int):
+    with SessionLocal() as s:
+        s.query(Conversation).filter(Conversation.id == cid)\
+          .update({"last_update": datetime.now(timezone.utc)})
+        s.commit()
+        
 @app.post("/send")
 async def send_message(
     content: str = Form(...),
@@ -234,94 +308,40 @@ async def send_message(
                   et on l’insère dans memories pour cette conversation, avant de traiter content.
     """
     if conversation_id != -1:
-        conv = (
-            db.query(Conversation)
-            .filter(
-                Conversation.id == conversation_id,
-                Conversation.user_id == user.id,
-            )
-            .first()
-        )
+        conv = await asyncio.to_thread(_get_conv, conversation_id, user.id)
         if not conv:
             raise HTTPException(status_code=404, detail="Conversation not found")
     else:
-        title = titre.generate_title(content)
-        conv = Conversation(user_id=user.id, title=title)
-        db.add(conv)
-        db.commit()
-        db.refresh(conv)
+        title = await asyncio.to_thread(titre.generate_title, content)
+        conv = await asyncio.to_thread(_create_conv, user.id, title, datetime.now(timezone.utc))
     filenames = []
     if files:
         filenames = [f.filename for f in files]
-        print(f"Fichiers reçus : {[f.filename for f in files]}")
-        print(f"Taille des fichiers : {[f.file.size for f in files]} octets")
-        for up_file in files:
-            filename = up_file.filename
-            suffix = Path(filename).suffix.lower()
-            if suffix not in {".pdf", ".txt", ".md", ".markdown"}:
-                raise HTTPException(status_code=400, detail="Extension non autorisée")
+        # print(f"Fichiers reçus : {[f.filename for f in files]}")
+        # print(f"Taille des fichiers : {[f.file.size for f in files]} octets")
+        tasks = [asyncio.to_thread(_process_upload, f, conv.id) for f in files]
+        await asyncio.gather(*tasks)
 
-            tmp_dir = tempfile.mkdtemp()
-            tmp_path = os.path.join(tmp_dir, filename)
-            with open(tmp_path, "wb") as buffer:
-                shutil.copyfileobj(up_file.file, buffer)
-                
-            try:
-                if suffix == ".pdf":
-                    loader = PyPDFLoader(tmp_path)
-                    docs = loader.load()
-                    file_text = "\n".join([d.page_content for d in docs])
-                elif suffix == ".md" or suffix == ".markdown":
-                    loader = UnstructuredMarkdownLoader(tmp_path)
-                    docs = loader.load()
-                    file_text = "\n".join([d.page_content for d in docs])
-                elif suffix == ".txt":
-                    with open(tmp_path, "r", encoding="utf-8") as ftxt:
-                        file_text = ftxt.read()
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Erreur extraction contenu: {e}")
-
-            local.insert_message_and_memory(conv.id, "file", file_text)
-
-            try:
-                shutil.rmtree(tmp_dir, ignore_errors=True)
-            except:
-                pass
-            
-            splitter = RecursiveCharacterTextSplitter(
-                chunk_size=250000,
-                chunk_overlap=200,
-                length_function=len,
-                is_separator_regex=False,
-            )
-            
-            virtual_doc = Document(page_content=file_text, metadata={})
-            chunks = splitter.split_documents([virtual_doc])
-
-            for ch in chunks:
-                ch.page_content = f"<file> Fichier {filename} : \n{ch.page_content}\n</file>"
-                local.insert_message_and_memory(conv.id, "file", ch.page_content)
-
-    user_msg_id = local.insert_message_and_memory(conv.id, "user", content)
+    user_msg_id = await asyncio.to_thread(local.insert_message_and_memory, conv.id, "user", content)
 
     if use_web:
-        answer = web.recherche_web(content)
-        local.insert_message_and_memory(conv.id, "assistant", answer)
+        answer = await asyncio.to_thread(web.recherche_web, content)
+        await asyncio.to_thread(local.insert_message_and_memory, conv.id, "assistant", answer)
     else:
-        answer = local.answer_with_memory(content, conv.id, files_names=filenames)
+        answer = await asyncio.to_thread(local.answer_with_memory, content, conv.id, files_names=filenames)
 
     conv.last_update = datetime.now(timezone.utc)
-    db.commit()
+    await asyncio.to_thread(_touch_conv, conv.id)
 
     return {"conversation_id": conv.id, "response": answer, "title": conv.title}
 
 @app.post("/delete_conversation/{conversation_id}")
-def delete_conversation(
+async def delete_conversation(
     conversation_id: int,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    conv = (
+    conv = asyncio.to_thread(
         db.query(Conversation)
         .filter(Conversation.id == conversation_id, Conversation.user_id == user.id)
         .first()
