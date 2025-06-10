@@ -324,7 +324,7 @@ def find_emotions(text: str) -> List[str]:
 
     llm = Ollama(model="granite3.1-dense:latest", temperature=0)
     
-    raw = llm.invoke(prompt_template.format(question=text)).strip()
+    raw = llm.invoke(prompt_template.format(text=text)).strip()
 
     match = re.search(r"#\w+#", raw)
     if match:
@@ -378,7 +378,7 @@ async def send_message(
         answer = await asyncio.to_thread(web.recherche_web, content)
         await asyncio.to_thread(local.insert_message_and_memory, conv.id, "assistant", answer)
     else:
-        answer = await asyncio.to_thread(local.answer_with_memory, content, conv.id, files_names=filenames)
+        answer = await asyncio.to_thread(local.answer_with_memory, content, conv.id, file_names=filenames)
 
     conv.last_update = datetime.now(timezone.utc)
     await asyncio.to_thread(_touch_conv, conv.id)
