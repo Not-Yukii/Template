@@ -151,10 +151,10 @@ def contextualize_chunks() -> List[Document]:
                 continue
 
             prompt = (
-                f"<document>\n{full_text}\n</document>\n"
+                f"<RAG>\n{full_text}\n</RAG>\n"
                 f"<chunk>\n{ch.page_content}\n</chunk>\n"
                 "Please provide a short, succinct sentence that situates the chunk "
-                "within the overall document to improve search retrieval. Answer in French, "
+                "within the overall RAG to improve search retrieval. Answer in French, "
                 "without additional commentary."
             )
             ctx_sentence = llm_ctx.invoke(prompt).strip()
@@ -231,10 +231,11 @@ def search_if_relevant(user_input: str, doc_passages: List[str]) -> bool:
     
     llm = OllamaLLM(model=MODEL_NAME)
     prompt = (
-        "Given the user input and the retrieved documents, determine if the input is relevant to the documents.\n\n"
+        "If the user input is mentionning any documents, he is not talking about the RAG but the documents he uploaded.\n"
+        "Here, given the user input and the RAG, determine if the input is relevant to the RAG.\n\n"
         f"User Input: {user_input}\n\n"
-        "Retrieved Documents:\n" + "\n".join(doc_passages) + "\n\n"
-        "Is the user input relevant to the retrieved documents? Answer with 'yes' and add the following tag in the answer #yes#"
+        "RAG:\n" + "\n".join(doc_passages) + "\n\n"
+        "Is the user input relevant to the RAG? Answer with 'yes' and add the following tag in the answer #yes#"
     )
     response = llm.invoke(prompt)
     response = response.strip().lower()
@@ -247,6 +248,9 @@ def answer_with_memory(user_input: str, conversation_id: int, k_mem: int = 5, k_
     mem_passages = retrieve_memories(conversation_id, user_input, k=k_mem)
     doc_passages = retrieve_documents(user_input, k=k_docs)
     
+    if files_names:
+        user_input += f"The files the user is talking about are : " + ", ".join(files_names)
+
     relevant = search_if_relevant(user_input, doc_passages)
     
     def fmt(passages: List[str], label: str) -> str:
@@ -290,9 +294,6 @@ def answer_with_memory(user_input: str, conversation_id: int, k_mem: int = 5, k_
     if "#yes#" not in relevant:
         doc_passages = []
 
-    if files_names:
-        user_input += f"The user has added {len(files_names)} files to the conversation named : " + ", ".join(files_names)
-
     user_msg = {
         "role": "user",
         "content": f"""
@@ -311,7 +312,7 @@ def answer_with_memory(user_input: str, conversation_id: int, k_mem: int = 5, k_
 
     ---
 
-    ### RAG (documents) – ONLY use if relevant : 
+    ### RAG – ONLY use if relevant : 
     <RAG>
     {fmt(doc_passages, "document")}
     </RAG>

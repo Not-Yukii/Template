@@ -250,7 +250,7 @@ async def send_message(
         db.add(conv)
         db.commit()
         db.refresh(conv)
-
+    filenames = []
     if files:
         filenames = [f.filename for f in files]
         print(f"Fichiers reçus : {[f.filename for f in files]}")
