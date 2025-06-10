@@ -129,8 +129,8 @@ def contextualize_chunks() -> List[Document]:
     existing_ids = get_existing_kb_ids(conn=engine.connect(), collection_name=DOCS_COLLECTION)
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=100000,
-        chunk_overlap=150,
+        chunk_size=1500,
+        chunk_overlap=200,
         length_function=len,
         is_separator_regex=False,
     )
@@ -226,16 +226,20 @@ def retrieve_documents(query: str, k: int = 4) -> List[str]:
     retriever = kb_store.as_retriever(search_kwargs={"k": k})
     return [d.page_content for d in retriever.invoke(query)]
 
+def is_relevant(user_input: str, store: PGVector, threshold: float = 0.83) -> bool:
+    docs = store.similarity_search_with_score(user_input, k=1)
+    return docs and docs[0][1] > threshold
+
 def search_if_relevant(user_input: str, doc_passages: List[str]) -> bool:
     if not doc_passages:
         return "no"
     
     llm = OllamaLLM(model=MODEL_NAME)
     prompt = (
+        f"User Input: {user_input}\n\n"
         "If the user input is mentionning any documents, he is not talking about the RAG but the documents he uploaded.\n"
         "Here, given the user input and BASED ON USER INPUTS compared to the RAG, determine if the input is relevant and has a CLEAR LINK to the content IN THE RAG.\n\n"
         "The RAG is ONLY RELEVANT FOR UPHF related questions, not for non-UPHF related questions.\n"
-        f"User Input: {user_input}\n\n"
         "RAG:\n" + "\n".join(doc_passages) + "\n\n"
         "Is the user input content relevant to the RAG? Answer ONLY with 'yes' and add the following tag in the answer #yes#"
     )
@@ -245,87 +249,41 @@ def search_if_relevant(user_input: str, doc_passages: List[str]) -> bool:
     
     return response
 
-def answer_with_memory(user_input: str, conversation_id: int, k_mem: int = 5, k_docs: int = 5, files_names: List[str] = []) -> str:
-    """Full round‑trip: store Q → retrieve memories + docs → build prompt → LLM."""
-    mem_passages = retrieve_memories(conversation_id, user_input, k=k_mem)
-    doc_passages = retrieve_documents(user_input, k=k_docs)
-    
-    if files_names:
-        user_input += f"The files the user is talking about are : " + ", ".join(files_names)
+def answer_with_memory(question: str, conversation_id: int, k_mem: int = 5, k_docs: int = 4, file_names: List[str] | None = None) -> str:
+    """Pipeline complet : retrieve mémoire + docs puis génération."""
 
-    relevant = search_if_relevant(user_input, doc_passages)
-    
-    def fmt(passages: List[str], label: str) -> str:
-        if not passages:
-            return f"Aucun {label} pertinent trouvé."
-        return "\n".join(f"{label} {i+1}: {txt}" for i, txt in enumerate(passages))
+    # 1) Récupération contexte & RAG
+    memories = retrieve_memories(conversation_id, question, k=k_mem)
+    documents = retrieve_documents(question, k=k_docs)
+    use_rag = is_relevant(question, kb_store)
 
-    # context_block = "\n\n".join(
-    #     [fmt(mem_passages, "mémoire"), fmt(doc_passages, "document")]
-    # )
+    # 2) Construction des messages ChatML
+    messages = [{
+        "role": "system",
+        "content": (
+            "Vous êtes Chat‑ON, assistant francophone spécialiste cybersécurité. "
+            "N'utilisez les blocs <conversation_context> et <RAG> que s'ils sont pertinents."),
+    }]
 
-    system_msg = {
-    "role": "system",
-    "content": """
-    You are a specialized French-speaking virtual assistant named Chat-ON, designed to answer questions by using if necessary the information provided between the <conversation_context> and </conversation_context> tags.
+    if file_names:
+        question += " Les fichiers mentionnés sont : " + ", ".join(file_names)
+    messages.append({"role": "user", "content": question})
 
-    Rules to follow:
-    - ONLY use information between the <conversation_context> and </conversation_context> tags if it is directly relevant to the question.
-    - ONLY use information between the <RAG> and </RAG> tags ONLY if it is relevant to the question otherwise COMPLETELY IGNORE it.
-    - Do NOT provide off-topic or unsolicited information.
-    - Adapt the length of your answer to the level of detail of the question: be concise if the question is simple or vague.
-    - Stay professional and clear.
-    - Do NOT mention that you use the context or the memory in your answer.
-    - If the question is too vague or if the user message is just random words, ask for clarification to the user.
+    if memories:
+        messages.append({
+            "role": "system",
+            "content": "<conversation_context>\n" + "\n".join(memories) + "\n</conversation_context>",
+        })
 
-    Examples:
+    if use_rag and documents:
+        rag_lines = [f"- {d.metadata['id']} · {d.page_content.split('###')[0]}" for d in documents]
+        messages.append({
+            "role": "system",
+            "content": "<RAG>\n" + "\n".join(rag_lines) + "\n</RAG>",
+        })
 
-    Expected behavior:
-    User: Hello!
-    Answer: Hello! I'm a virtual assistant in cybersecurity, at your disposal.
-
-    Behaviour to avoid:
-    User: Hello!
-    Answer: Hello! I'm a virtual assistant in cybersecurity, here to answer your questions. Good cybersecurity practices include [...] (this is off-topic as not requested).
-
-    Your priority is contextual relevance, conciseness, and clarity.
-    Please answer by defaut in French, do not add the English translation unless explicitly requested.
-    """
-    }
-    
-    if "#yes#" not in relevant:
-        doc_passages = []
-
-    user_msg = {
-        "role": "user",
-        "content": f"""
-    
-    ### Conversation context :
-    <conversation_context>
-    {fmt(mem_passages, "mémoire")}
-    </conversation_context>
-    
-    ---
-    
-    ### User prompt :
-    <user_input>
-    {user_input}
-    </user_input>
-
-    ---
-
-    ### RAG – ONLY use if relevant : 
-    <RAG>
-    {fmt(doc_passages, "document")}
-    </RAG>
-    """.strip()
-    }
-    
-    # print([system_msg, user_msg])
-
-    response = ollama_chat(model=MODEL_NAME, messages=[system_msg, user_msg], stream=False)
-    assistant_answer = response["message"]["content"]
-
+    # 3) Appel LLM & stockage
+    assistant_answer = ollama_chat(model=MODEL_NAME, messages=messages, stream=False)["message"]["content"]
     insert_message_and_memory(conversation_id, "assistant", assistant_answer)
     return assistant_answer
 
