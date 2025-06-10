@@ -19,7 +19,7 @@ from ollama import chat as ollama_chat
 
 DB_NAME = "test"
 DB_USER = "postgres"
-DB_PASSWORD = "Admin"
+DB_PASSWORD = "admin"
 DB_HOST = "localhost"
 
 # --- CONSTantes de connexion PostgreSQL
@@ -31,7 +31,7 @@ DOCS_COLLECTION = "knowledge_base"
 
 # --- Module d'embeddings (Sentence-Transformers)
 ollama_embeddings = OllamaEmbeddings(
-    model="granite3.1-dense:8b"
+    model="granite3.1-dense:latest"
 )
 
 # --- Vectorstore pour pgvector
@@ -48,7 +48,7 @@ kb_store = PGVector(
     collection_name=DOCS_COLLECTION,
 )
 
-MODEL_NAME = "granite3.1-dense:8b"
+MODEL_NAME = "granite3.1-dense:latest"
 
 # Pipeline d'ingestion de documents
 
@@ -227,7 +227,11 @@ def retrieve_documents(query: str, k: int = 4) -> List[str]:
     return [d.page_content for d in retriever.invoke(query)]
 
 def is_relevant(user_input: str, store: PGVector, threshold: float = 0.22) -> bool:
-    docs = store.similarity_search_with_score(user_input, k=1)
+    docs = store.similarity_search_with_score(user_input, k=10)
+    # faire une moyenne des scores obtenus dans docs
+    print(docs)
+    score_moyen = sum(score for _, score in docs) / len(docs) if docs else 0
+    print(f"Score moyen pour '{user_input}': {score_moyen:.2f}")
     return docs and docs[0][1] < threshold
 
 def search_if_relevant(user_input: str, doc_passages: List[str]) -> bool:

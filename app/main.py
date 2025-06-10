@@ -37,7 +37,7 @@ from . import recherche_local as local
 
 DB_NAME = "test"
 DB_USER = "postgres"
-DB_PASSWORD = "Admin"
+DB_PASSWORD = "admin"
 DB_HOST = "localhost"
 
 DATABASE_URL = os.getenv(

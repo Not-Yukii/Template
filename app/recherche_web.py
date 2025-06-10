@@ -31,7 +31,7 @@ async def get_serper_api_key():
             # print("SERPER_API_KEY:", SERPER_API_KEY)
             break
 
-MODEL_NAME = "granite3.1-dense:8b"
+MODEL_NAME = "granite3.1-dense:latest"
 NB_SITES_MAX = 6
 VERBOSE = False
 
