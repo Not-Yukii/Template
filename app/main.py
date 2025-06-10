@@ -299,7 +299,7 @@ async def send_message(
             chunks = splitter.split_documents([virtual_doc])
 
             for ch in chunks:
-                ch.page_content = f"<document>\n{ch.page_content}\n</document>"
+                ch.page_content = f"<file> Fichier {filename} : \n{ch.page_content}\n</file>"
                 local.insert_message_and_memory(conv.id, "file", ch.page_content)
 
     user_msg_id = local.insert_message_and_memory(conv.id, "user", content)
