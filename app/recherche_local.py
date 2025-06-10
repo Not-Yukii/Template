@@ -234,7 +234,7 @@ def search_if_relevant(user_input: str, doc_passages: List[str]) -> bool:
         "Given the user input and the retrieved documents, determine if the input is relevant to the documents.\n\n"
         f"User Input: {user_input}\n\n"
         "Retrieved Documents:\n" + "\n".join(doc_passages) + "\n\n"
-        "Is the user input relevant to the retrieved documents? Answer with 'yes' or 'no'."
+        "Is the user input relevant to the retrieved documents? Answer with 'yes' and add the following tag in the answer #yes#"
     )
     response = llm.invoke(prompt)
     response = response.strip().lower()
@@ -287,7 +287,7 @@ def answer_with_memory(user_input: str, conversation_id: int, k_mem: int = 5, k_
     """
     }
     
-    if not relevant:
+    if "#yes#" not in relevant:
         doc_passages = []
 
 
