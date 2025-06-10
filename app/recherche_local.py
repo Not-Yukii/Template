@@ -16,8 +16,13 @@ from langchain_postgres.vectorstores import PGVector
 from langchain_community.utilities import SQLDatabase
 from ollama import chat as ollama_chat
 
+DB_NAME = "test"
+DB_USER = "postgres"
+DB_PASSWORD = "Admin"
+DB_HOST = "localhost"
+
 # --- CONSTantes de connexion PostgreSQL
-DB_URI = "postgresql+psycopg://postgres:Admin@localhost:5432/test"
+DB_URI = f"postgresql+psycopg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:5432/{DB_NAME}"
 engine = create_engine(DB_URI, echo=False)
 
 MEMORY_COLLECTION = "memories"
@@ -188,7 +193,7 @@ def clear_kb_collection():
 def insert_message_and_memory(conversation_id: int, role: str, content: str) -> int:
     """Store message + embedding in memories collection and return DB id."""
     with psycopg.connect(
-        dbname="test", user="postgres", password="Admin", host="localhost"
+        dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD, host=DB_HOST
     ) as conn:
         with conn.cursor() as cur:
             cur.execute(
