@@ -305,11 +305,15 @@ def search_if_relevant(user_input: str, doc_passages: List[str]) -> bool:
     return response
 
 def generer_keywords_requete(question: str) -> str:
-    llm = OllamaLLM(model=MODEL_NAME)
+    llm = OllamaLLM(model="llama3.1:8b")
     prompt = (
         f"""Here's the question posed by the user: {question}\n\n.
         
-        Your mission: transform the user's question into a clear, concise request IN TWO WORDS ONLY.
+        Your mission: transform the user's question into a clear, concise request IN TWO WORDS MAXIMUM AND ONLY.
+        
+        **Mandatory rules**:
+        1. Do not use more than two words.
+        2. Do not use any punctuation marks.
 
         **Rules for rewording**
         1. Give **only** the final query
@@ -319,10 +323,6 @@ def generer_keywords_requete(question: str) -> str:
         5. Retains technical terms, proper names, CVEs, RFCs, ports, etc.
         6. Converts ambiguous dates into **dd/mm/yyyy** format to remove ambiguity
         (“today”, “yesterday”, “tomorrow”, etc.).
-        
-        Exemple : Quel est le port par défaut de SSH ? → SSH port défaut
-        Exemple : Quel est le VPN à l'UPHF ? → VPN UPHF
-        
         """
     )
     response = llm.invoke(prompt)
