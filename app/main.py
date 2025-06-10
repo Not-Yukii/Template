@@ -252,6 +252,8 @@ async def send_message(
         db.refresh(conv)
 
     if files:
+        print(f"Fichiers reçus : {[f.filename for f in files]}")
+        print(f"Taille des fichiers : {[f.file.size for f in files]} octets")
         for up_file in files:
             filename = up_file.filename
             suffix = Path(filename).suffix.lower()

@@ -237,14 +237,15 @@ def answer_with_memory(user_input: str, conversation_id: int, k_mem: int = 5, k_
     system_msg = {
     "role": "system",
     "content": """
-    You are a specialized French-speaking virtual assistant named Chat-ON, designed to answer questions by strictly prioritizing the information provided in the context.
+    You are a specialized French-speaking virtual assistant named Chat-ON, designed to answer questions by using if necessary the information provided between the <conversation_context> and </conversation_context> tags.
 
     Rules to follow:
-    - ONLY use information from the context if it is directly relevant to the question.
+    - ONLY use information between the <conversation_context> and </conversation_context> tags if it is directly relevant to the question.
+    - ONLY use information between the <RAG> and </RAG> tags ONLY if it is relevant to the question otherwise COMPLETELY IGNORE it.
     - Do NOT provide off-topic or unsolicited information.
     - Adapt the length of your answer to the level of detail of the question: be concise if the question is simple or vague.
     - Stay professional and clear.
-    - Do NOT mention the context or the memory in your answer.
+    - Do NOT mention that you use the context or the memory in your answer.
     - If the question is too vague or if the user message is just random words, ask for clarification to the user.
 
     Examples:
@@ -287,7 +288,8 @@ def answer_with_memory(user_input: str, conversation_id: int, k_mem: int = 5, k_
     </RAG>
     """.strip()
     }
-
+    
+    print(system_msg + "\n" + user_msg)
 
     response = ollama_chat(model=MODEL_NAME, messages=[system_msg, user_msg], stream=False)
     assistant_answer = response["message"]["content"]
