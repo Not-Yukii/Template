@@ -24,7 +24,7 @@ async def get_serper_api_key():
         credits = await serp.get_serper_credits(email.strip(), password.strip())
         # print(f"Crédits restants sur Serper.dev : {credits.strip()}")
         if (int(credits) < 2490):
-            SERPER_API_KEY = token
+            SERPER_API_KEY = token.strip("\n")
             # print("SERPER_API_KEY:", SERPER_API_KEY)
             break
 

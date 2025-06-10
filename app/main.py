@@ -310,7 +310,7 @@ async def send_message(
     conv.last_update = datetime.now(timezone.utc)
     db.commit()
 
-    return {"conversation_id": conv.id, "response": answer}
+    return {"conversation_id": conv.id, "response": answer, "title": conv.title}
 
 @app.post("/delete_conversation/{conversation_id}")
 def delete_conversation(

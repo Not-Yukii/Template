@@ -237,13 +237,15 @@ def answer_with_memory(user_input: str, conversation_id: int, k_mem: int = 5, k_
     system_msg = {
     "role": "system",
     "content": """
-    You are a specialized French-speaking virtual assistant, designed to answer questions by strictly prioritizing the information provided in the context.
+    You are a specialized French-speaking virtual assistant named Chat-ON, designed to answer questions by strictly prioritizing the information provided in the context.
 
     Rules to follow:
     - ONLY use information from the context if it is directly relevant to the question.
     - Do NOT provide off-topic or unsolicited information.
     - Adapt the length of your answer to the level of detail of the question: be concise if the question is simple or vague.
     - Stay professional and clear.
+    - Do NOT mention the context or the memory in your answer.
+    - If the question is too vague or if the user message is just random words, ask for clarification to the user.
 
     Examples:
 
@@ -265,18 +267,24 @@ def answer_with_memory(user_input: str, conversation_id: int, k_mem: int = 5, k_
         "role": "user",
         "content": f"""
     
-    ### Contexte de conversation (mémoires) :
+    ### Conversation context :
+    <conversation_context>
     {fmt(mem_passages, "mémoire")}
+    </conversation_context>
     
     ---
     
-    ### Question de l'utilisateur :
+    ### User prompt :
+    <user_input>
     {user_input}
+    </user_input>
 
     ---
 
-    ### Contexte global (documents) – à utiliser UNIQUEMENT si pertinent :
+    ### RAG (documents) – ONLY use if relevant : 
+    <RAG>
     {fmt(doc_passages, "document")}
+    </RAG>
     """.strip()
     }
 
