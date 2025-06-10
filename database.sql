@@ -22,3 +22,8 @@ CREATE TABLE IF NOT EXISTS messages (
   content TEXT NOT NULL,
   created_at TIMESTAMP DEFAULT NOW()
 );
+
+ALTER TABLE langchain_pg_embedding
+  ADD COLUMN tsv tsvector
+  GENERATED ALWAYS AS (to_tsvector('french', document)) STORED;
+CREATE INDEX idx_chunks_tsv ON langchain_pg_embedding USING GIN(tsv);
