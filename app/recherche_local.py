@@ -226,9 +226,9 @@ def retrieve_documents(query: str, k: int = 4) -> List[str]:
     retriever = kb_store.as_retriever(search_kwargs={"k": k})
     return [d.page_content for d in retriever.invoke(query)]
 
-def is_relevant(user_input: str, store: PGVector, threshold: float = 0.83) -> bool:
+def is_relevant(user_input: str, store: PGVector, threshold: float = 0.22) -> bool:
     docs = store.similarity_search_with_score(user_input, k=1)
-    return docs and docs[0][1] > threshold
+    return docs and docs[0][1] < threshold
 
 def search_if_relevant(user_input: str, doc_passages: List[str]) -> bool:
     if not doc_passages:
