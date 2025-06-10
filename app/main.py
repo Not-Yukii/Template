@@ -252,6 +252,7 @@ async def send_message(
         db.refresh(conv)
 
     if files:
+        filenames = [f.filename for f in files]
         print(f"Fichiers reçus : {[f.filename for f in files]}")
         print(f"Taille des fichiers : {[f.file.size for f in files]} octets")
         for up_file in files:
@@ -307,7 +308,7 @@ async def send_message(
         answer = web.recherche_web(content)
         local.insert_message_and_memory(conv.id, "assistant", answer)
     else:
-        answer = local.answer_with_memory(content, conv.id)
+        answer = local.answer_with_memory(content, conv.id, files_names=filenames)
 
     conv.last_update = datetime.now(timezone.utc)
     db.commit()

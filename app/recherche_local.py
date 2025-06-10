@@ -128,7 +128,7 @@ def contextualize_chunks() -> List[Document]:
     existing_ids = get_existing_kb_ids(conn=engine.connect(), collection_name=DOCS_COLLECTION)
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1500,
+        chunk_size=100000,
         chunk_overlap=150,
         length_function=len,
         is_separator_regex=False,
@@ -242,7 +242,7 @@ def search_if_relevant(user_input: str, doc_passages: List[str]) -> bool:
     
     return response
 
-def answer_with_memory(user_input: str, conversation_id: int, k_mem: int = 5, k_docs: int = 5) -> str:
+def answer_with_memory(user_input: str, conversation_id: int, k_mem: int = 5, k_docs: int = 5, files_names: List[str] = []) -> str:
     """Full round‑trip: store Q → retrieve memories + docs → build prompt → LLM."""
     mem_passages = retrieve_memories(conversation_id, user_input, k=k_mem)
     doc_passages = retrieve_documents(user_input, k=k_docs)
@@ -290,6 +290,8 @@ def answer_with_memory(user_input: str, conversation_id: int, k_mem: int = 5, k_
     if "#yes#" not in relevant:
         doc_passages = []
 
+    if files_names:
+        user_input += f"The user has added {len(files_names)} files to the conversation named : " + ", ".join(files_names)
 
     user_msg = {
         "role": "user",
