@@ -18,6 +18,10 @@ from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, DateT
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from datetime import datetime, timezone
 import os
+import re
+import argparse
+from langchain.prompts.chat import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
+from langchain_community.llms.ollama import Ollama
 from passlib.context import CryptContext
 from datetime import timedelta
 from jose import JWTError, jwt
@@ -291,6 +295,50 @@ def _touch_conv(cid: int):
           .update({"last_update": datetime.now(timezone.utc)})
         s.commit()
         
+def find_emotions(text: str) -> List[str]:
+    """
+    Trouve les émotions dans le texte.
+    """
+    EMOTIONS = [
+    "#colère#", "#détective#", "#fatigué#", "#heureux#", "#inquiet#",
+    "#intelligent#", "#naturel#", "#pensif#", "#professeur#", "#effrayant#",
+    "#triste#", "#soulagé#", "#amoureux#", "#endormi#", "#surpris#"
+    ]
+    EMOTIONS_SET = set(EMOTIONS)
+    EMOTIONS_STR = ", ".join(EMOTIONS)
+
+    SYSTEM_PROMPT = (
+        "You are an *emotion tagger*. "
+        "You MUST answer with **exactly one tag** from the list below, "
+        "including the surrounding # symbols. "
+        "If none applies, answer with #naturel#.\n\n"
+        f"Allowed tags: [{EMOTIONS_STR}]"
+    )
+
+    HUMAN_PROMPT = "Text: {text}"
+    
+    prompt_template = ChatPromptTemplate.from_messages([
+        SystemMessagePromptTemplate.from_template(SYSTEM_PROMPT),
+        HumanMessagePromptTemplate.from_template(HUMAN_PROMPT),
+    ])
+
+    llm = Ollama(model="granite3.1-dense:latest", temperature=0)
+    
+    raw = llm.invoke(prompt_template.format(question=text)).strip()
+
+    match = re.search(r"#\w+#", raw)
+    if match:
+        tag = match.group(0)
+        if tag in EMOTIONS_SET:
+            return tag
+
+    for tag in EMOTIONS:
+        plain = tag.strip("#").lower()
+        if plain in raw.lower():
+            return tag
+
+    return "#naturel#"
+        
 @app.post("/send")
 async def send_message(
     content: str = Form(...),
@@ -323,6 +371,8 @@ async def send_message(
         await asyncio.gather(*tasks)
 
     user_msg_id = await asyncio.to_thread(local.insert_message_and_memory, conv.id, "user", content)
+    
+    emotion = find_emotions(content)
 
     if use_web:
         answer = await asyncio.to_thread(web.recherche_web, content)
@@ -333,7 +383,7 @@ async def send_message(
     conv.last_update = datetime.now(timezone.utc)
     await asyncio.to_thread(_touch_conv, conv.id)
 
-    return {"conversation_id": conv.id, "response": answer, "title": conv.title}
+    return {"conversation_id": conv.id, "response": answer, "title": conv.title, "emotion": emotion}
 
 @app.post("/delete_conversation/{conversation_id}")
 async def delete_conversation(

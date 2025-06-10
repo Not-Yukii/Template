@@ -233,14 +233,15 @@ def search_if_relevant(user_input: str, doc_passages: List[str]) -> bool:
     llm = OllamaLLM(model=MODEL_NAME)
     prompt = (
         "If the user input is mentionning any documents, he is not talking about the RAG but the documents he uploaded.\n"
-        "Here, given the user input and the RAG, determine if the input is relevant to the RAG.\n\n"
+        "Here, given the user input and BASED ON USER INPUTS compared to the RAG, determine if the input is relevant and has a CLEAR LINK to the content IN THE RAG.\n\n"
+        "The RAG is ONLY RELEVANT FOR UPHF related questions, not for non-UPHF related questions.\n"
         f"User Input: {user_input}\n\n"
         "RAG:\n" + "\n".join(doc_passages) + "\n\n"
-        "Is the user input relevant to the RAG? Answer with 'yes' and add the following tag in the answer #yes#"
+        "Is the user input content relevant to the RAG? Answer ONLY with 'yes' and add the following tag in the answer #yes#"
     )
     response = llm.invoke(prompt)
     response = response.strip().lower()
-    # print(response)
+    print(response)
     
     return response
 
