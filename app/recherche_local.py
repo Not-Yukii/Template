@@ -220,19 +220,38 @@ def retrieve_documents(query: str, k: int = 4) -> List[str]:
     retriever = kb_store.as_retriever(search_kwargs={"k": k})
     return [d.page_content for d in retriever.invoke(query)]
 
+def search_if_relevant(user_input: str, doc_passages: List[str]) -> bool:
+    if not doc_passages:
+        return "no"
+    
+    llm = OllamaLLM(model=MODEL_NAME)
+    prompt = (
+        "Given the user input and the retrieved documents, determine if the input is relevant to the documents.\n\n"
+        f"User Input: {user_input}\n\n"
+        "Retrieved Documents:\n" + "\n".join(doc_passages) + "\n\n"
+        "Is the user input relevant to the retrieved documents? Answer with 'yes' or 'no'."
+    )
+    response = llm.invoke(prompt)
+    response = response.strip().lower()
+    print(response)
+    
+    return response
+
 def answer_with_memory(user_input: str, conversation_id: int, k_mem: int = 5, k_docs: int = 5) -> str:
     """Full round‑trip: store Q → retrieve memories + docs → build prompt → LLM."""
     mem_passages = retrieve_memories(conversation_id, user_input, k=k_mem)
     doc_passages = retrieve_documents(user_input, k=k_docs)
-
+    
+    relevant = search_if_relevant(user_input, doc_passages)
+    
     def fmt(passages: List[str], label: str) -> str:
         if not passages:
             return f"Aucun {label} pertinent trouvé."
         return "\n".join(f"{label} {i+1}: {txt}" for i, txt in enumerate(passages))
 
-    context_block = "\n\n".join(
-        [fmt(mem_passages, "mémoire"), fmt(doc_passages, "document")]
-    )
+    # context_block = "\n\n".join(
+    #     [fmt(mem_passages, "mémoire"), fmt(doc_passages, "document")]
+    # )
 
     system_msg = {
     "role": "system",
@@ -262,6 +281,9 @@ def answer_with_memory(user_input: str, conversation_id: int, k_mem: int = 5, k_
     Please answer by defaut in French, do not add the English translation unless explicitly requested.
     """
     }
+    
+    if not relevant:
+        doc_passages = []
 
 
     user_msg = {

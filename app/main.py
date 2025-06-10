@@ -288,8 +288,8 @@ async def send_message(
                 pass
             
             splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1200,
-                chunk_overlap=120,
+                chunk_size=250000,
+                chunk_overlap=200,
                 length_function=len,
                 is_separator_regex=False,
             )
