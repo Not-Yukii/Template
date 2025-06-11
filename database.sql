@@ -4,7 +4,8 @@ CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
   email TEXT UNIQUE,
   password TEXT NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW()
+  created_at TIMESTAMP DEFAULT NOW(),
+  is_verified BOOLEAN DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS conversations (
