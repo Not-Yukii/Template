@@ -1,7 +1,7 @@
 import os
 # os.environ["OLLAMA_HOST"] = "http://ollamaProjet4A:11434"
 from pathlib import Path
-from typing import Counter, List, Dict
+from typing import Counter, List, Dict, Tuple
 import argparse
 import re
 import psycopg
@@ -255,37 +255,75 @@ def semantic_search(query: str, k: int = 5):
     )
     return retriever.invoke(query)
 
-def retrieve_documents(query: str, k: int = 5) -> List[str]:
-    semis = semantic_search(query, k=k)
-    keys = keyword_search(query, k=k)
+def rank_chunks(
+    query: str,
+    store: PGVector,
+    k: int = 20,
+    threshold: float | None = 0.25,
+) -> list[Tuple[Document, float]]:
+    """
+    Retourne la liste (Document, score) triée par similarité croissante.
+    - Si `threshold` est défini, filtre ceux dont score < threshold.
+    - Sinon, renvoie simplement les k meilleurs.
+    """
+    # k*4 pour élargir la recherche, on filtre ensuite
+    results = store.similarity_search_with_score(query, k=k * 4)
 
-    # merge semantic + keyword as before
-    merged = []
-    seen = set()
-    for doc in keys + semis:
+    # Plus le score est petit, plus la similarité est forte avec pgvector/cosine
+    if threshold is not None:
+        results = [(doc, s) for doc, s in results if s < threshold]
+
+    # On garde au maximum k chunks
+    return sorted(results, key=lambda x: x[1])[:k]
+
+def retrieve_documents(query: str, k: int = 5, threshold: float = 0.25) -> List[str]:
+    """
+    Récupère jusqu’à k chunks pertinents :
+      1. score sémantique < threshold (rank_chunks)
+      2. + fusion avec recherche lexicale (keyword_search)
+      3. + filtre : le chunk doit contenir au moins un mot-clé de la requête
+    """
+    # 1) Récupération sémantique + scoring
+    ranked = rank_chunks(query, kb_store, k=k * 4, threshold=threshold)  # [(doc, score)]
+
+    # 2) Fusion éventuelle avec la recherche lexicale
+    key_hits = keyword_search(query, k=k * 4)
+    seen_ids = {doc.metadata["id"] for doc, _ in ranked}
+    for d in key_hits:
+        if d.metadata["id"] not in seen_ids:
+            ranked.append((d, None))          # None => pas de score sémantique
+            seen_ids.add(d.metadata["id"])
+
+    # 3) Filtre lexical : le chunk doit contenir un mot-clé extrait
+    kws = extract_keywords(query, top_n=5)
+    def contains_kw(doc: Document) -> bool:
+        txt = doc.page_content.lower()
+        return any(kw in txt for kw in kws)
+
+    filtered = [doc for doc, _ in ranked if contains_kw(doc)]
+
+    # 4) Si aucun chunk ne respecte le filtre, on retombe sur les premiers ranked
+    candidates = filtered if filtered else [doc for doc, _ in ranked]
+
+    # 5) Dé-duplication et tronquage à k
+    final, seen = [], set()
+    for doc in candidates:
         cid = doc.metadata["id"]
         if cid not in seen:
-            merged.append(doc)
+            final.append(doc)
             seen.add(cid)
-        if len(merged) >= k * 3:
+        if len(final) >= k:
             break
 
-    # lexical filter: keep only chunks containing query keywords
-    kws = extract_keywords(query, top_n=5)
-    filtered = [d for d in merged if any(kw in d.page_content.lower() for kw in kws)]
+    return [d.page_content for d in final]
 
-    # if no chunk mentions a keyword, fall back to the first k of merged
-    chosen = filtered[:k] if filtered else merged[:k]
-
-    return [d.page_content for d in chosen]
-
-def is_relevant(user_input: str, store: PGVector, threshold: float = 0.25) -> bool:
-    docs = store.similarity_search_with_score(user_input, k=10)
-    # faire une moyenne des scores obtenus dans docs
-    print(docs)
-    score_moyen = sum(score for _, score in docs) / len(docs) if docs else 0
-    print(f"Score moyen pour '{user_input}': {score_moyen:.2f}")
-    return score_moyen < threshold
+# def is_relevant(user_input: str, store: PGVector, threshold: float = 0.25) -> bool:
+#     docs = store.similarity_search_with_score(user_input, k=10)
+#     # faire une moyenne des scores obtenus dans docs
+#     print(docs)
+#     score_moyen = sum(score for _, score in docs) / len(docs) if docs else 0
+#     print(f"Score moyen pour '{user_input}': {score_moyen:.2f}")
+#     return score_moyen < threshold
 
 # def search_if_relevant(user_input: str, doc_passages: List[str]) -> bool:
 #     if not doc_passages:
@@ -358,7 +396,7 @@ def answer_with_memory(question: str, conversation_id: int, k_mem: int = 5, k_do
     print("\nLes docs:\n\n")
     print(documents)
     print("\nFin des docs:\n\n")
-    use_rag = is_relevant(question, kb_store)
+    use_rag = bool(documents)
     print(f"RAG is relevant: {use_rag}")
 
     # 2) Construction des messages ChatML
