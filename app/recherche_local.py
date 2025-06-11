@@ -285,24 +285,24 @@ def is_relevant(user_input: str, store: PGVector, threshold: float = 0.22) -> bo
     print(f"Score moyen pour '{user_input}': {score_moyen:.2f}")
     return score_moyen < threshold
 
-def search_if_relevant(user_input: str, doc_passages: List[str]) -> bool:
-    if not doc_passages:
-        return "no"
+# def search_if_relevant(user_input: str, doc_passages: List[str]) -> bool:
+#     if not doc_passages:
+#         return "no"
     
-    llm = OllamaLLM(model=MODEL_NAME)
-    prompt = (
-        f"User Input: {user_input}\n\n"
-        "If the user input is mentionning any documents, he is not talking about the RAG but the documents he uploaded.\n"
-        "Here, given the user input and BASED ON USER INPUTS compared to the RAG, determine if the input is relevant and has a CLEAR LINK to the content IN THE RAG.\n\n"
-        "The RAG is ONLY RELEVANT FOR UPHF related questions, not for non-UPHF related questions.\n"
-        "RAG:\n" + "\n".join(doc_passages) + "\n\n"
-        "Is the user input content relevant to the RAG? Answer ONLY with 'yes' and add the following tag in the answer #yes#"
-    )
-    response = llm.invoke(prompt)
-    response = response.strip().lower()
-    print(response)
+#     llm = OllamaLLM(model=MODEL_NAME)
+#     prompt = (
+#         f"User Input: {user_input}\n\n"
+#         "If the user input is mentionning any documents, he is not talking about the RAG but the documents he uploaded.\n"
+#         "Here, given the user input and BASED ON USER INPUTS compared to the RAG, determine if the input is relevant and has a CLEAR LINK to the content IN THE RAG.\n\n"
+#         "The RAG is ONLY RELEVANT FOR UPHF related questions, not for non-UPHF related questions.\n"
+#         "RAG:\n" + "\n".join(doc_passages) + "\n\n"
+#         "Is the user input content relevant to the RAG? Answer ONLY with 'yes' and add the following tag in the answer #yes#"
+#     )
+#     response = llm.invoke(prompt)
+#     response = response.strip().lower()
+#     print(response)
     
-    return response
+#     return response
 
 def get_recent_messages(conversation_id: int, n: int = 6) -> list[str]:
     """Retourne les n derniers échanges du fil, du plus ancien au plus récent."""
