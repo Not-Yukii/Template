@@ -1,4 +1,4 @@
-# import os
+import os
 # os.environ["OLLAMA_HOST"] = "http://ollamaProjet4A:11434"
 
 import ollama
@@ -13,23 +13,24 @@ from . import serper_tokens as serp
 # ----------------------------------------------------------------
 
 accounts = []
-SERPER_API_KEY = ""
+SERPER_API_KEY = os.getenv("SERPER_API_KEY")
 
 async def get_serper_api_key():
-    global SERPER_API_KEY
-    with open("app/serper_logins.txt", "r") as f:
-        lines = f.readlines()
-        accounts = lines
+    return SERPER_API_KEY
+#     global SERPER_API_KEY
+#     with open("app/serper_logins.txt", "r") as f:
+#         lines = f.readlines()
+#         accounts = lines
     
-    for i in range(len(accounts)):
-        email, password, token = accounts[i].split(":")
-        # print(f"Email: {email}, Password: {password}, Token: {token}")
-        credits = await serp.get_serper_credits(email.strip(), password.strip())
-        # print(f"Crédits restants sur Serper.dev : {credits.strip()}")
-        if (int(credits) < 2490):
-            SERPER_API_KEY = token.strip("\n")
-            # print("SERPER_API_KEY:", SERPER_API_KEY)
-            break
+#     for i in range(len(accounts)):
+#         email, password, token = accounts[i].split(":")
+#         # print(f"Email: {email}, Password: {password}, Token: {token}")
+#         credits = await serp.get_serper_credits(email.strip(), password.strip())
+#         # print(f"Crédits restants sur Serper.dev : {credits.strip()}")
+#         if (int(credits) < 2490):
+#             SERPER_API_KEY = token.strip("\n")
+#             # print("SERPER_API_KEY:", SERPER_API_KEY)
+#             break
 
 MODEL_NAME = "granite3.1-dense:latest"
 NB_SITES_MAX = 6

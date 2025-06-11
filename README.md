@@ -29,5 +29,18 @@ The API now exposes the following endpoints:
 - `GET /conversations` - List conversations for the authenticated user (`Authorization: Bearer <token>`).
 - `GET /chat/{id}` - Retrieve all messages for a conversation.
 - `POST /send` - Send a message to a conversation or start a new one.
+- `POST /delete_conversations/{id}` - Delete a conversation based on its id.
 
-Make sure a PostgreSQL server is running and accessible at `postgresql://user:password@localhost/test` or update the `DATABASE_URL` environment variable accordingly.
+Make sure the database configuration is provided through environment variables.
+
+## Environment variables
+
+Set the following variables before starting the application:
+- `DB_NAME`
+- `DB_USER`
+- `DB_PASSWORD`
+- `DB_HOST`
+- `SECRET_KEY`
+- `SERPER_API_KEY`
+
+You may also define `DATABASE_URL` to override the database connection string.

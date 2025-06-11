@@ -13,7 +13,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain.schema import Document
 import tempfile, shutil
 from pathlib import Path
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from datetime import datetime, timezone
@@ -35,20 +35,16 @@ from . import recherche_web as web
 from . import recherche_titre as titre
 from . import recherche_local as local
 
-DB_NAME = "test"
-DB_USER = "postgres"
-DB_PASSWORD = "admin"
-DB_HOST = "localhost"
+DB_NAME = os.getenv("DB_NAME")
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_HOST = os.getenv("DB_HOST")
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:5432/{DB_NAME}",
-)
+DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:5432/{DB_NAME}"
 
-SECRET_KEY = os.getenv(
-    "SECRET_KEY",
-    "#Pr0j3tI@2025!"
-)
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise EnvironmentError("SECRET_KEY environment variable not set")
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
@@ -122,11 +118,25 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 class UserCreate(BaseModel):
-    email: str
+    email: EmailStr
     password: str
 
+    @field_validator("password")
+    def password_must_be_strong(cls, v: str) -> str:
+        if len(v) < 12:
+            raise ValueError("Le mot de passe doit contenir au moins 12 caractères")
+        if not re.search(r"[a-z]", v):
+            raise ValueError("Il faut au moins une minuscule")
+        if not re.search(r"[A-Z]", v):
+            raise ValueError("Il faut au moins une majuscule")
+        if not re.search(r"\d", v):
+            raise ValueError("Il faut au moins un chiffre")
+        if not re.search(r"[^A-Za-z0-9]", v):
+            raise ValueError("Il faut au moins un caractère spécial")
+        return v
+
 class UserLogin(BaseModel):
-    email: str
+    email: EmailStr
     password: str
 
 def get_db():
@@ -169,6 +179,12 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.email == user.email).first()
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
+    if len(user.password) and not re.match(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$", user.password):
+        raise HTTPException(
+            status_code=400,
+            detail="Le mot de passe doit contenir au moins 12 caractères, "
+                   "une minuscule, une majuscule, un chiffre et un caractère spécial.",
+        )
     hashed = get_password_hash(user.password)
     new_user = User(email=user.email, password=hashed)
     db.add(new_user)
@@ -235,8 +251,21 @@ def _process_upload(up_file: UploadFile, conv_id: int):
     if suffix not in {".pdf", ".txt", ".md", ".markdown"}:
         raise ValueError("Extension non autorisée")
 
+    filename =  os.path.basename(up_file.filename)
+    if not filename or filename != up_file.filename:
+        raise ValueError("Invalid filename")
+
+    up_file.file.seek(0, os.SEEK_END)
+    size = up_file.file.tell()
+    up_file.file.seek(0)
+    if size > 25 * 1024 * 1024:
+        raise HTTPException(
+            status_code=413,
+            detail="File too large. Maximum size is 25 MB.",
+        )
+
     tmp_dir = tempfile.mkdtemp()
-    tmp_path = os.path.join(tmp_dir, up_file.filename)
+    tmp_path = os.path.join(tmp_dir, filename)
     with open(tmp_path, "wb") as buffer:
         shutil.copyfileobj(up_file.file, buffer)
 
@@ -272,6 +301,8 @@ def _process_upload(up_file: UploadFile, conv_id: int):
         local.insert_message_and_memory(conv_id, "file", ch.page_content)
 
     shutil.rmtree(tmp_dir, ignore_errors=True)
+    
+    return file_text
 
 def _get_conv(cid: int, uid: int):
     with SessionLocal() as s:
@@ -363,12 +394,14 @@ async def send_message(
         title = await asyncio.to_thread(titre.generate_title, content)
         conv = await asyncio.to_thread(_create_conv, user.id, title, datetime.now(timezone.utc))
     filenames = []
+    
+    texts_from_files: List[str] = [] 
     if files:
         filenames = [f.filename for f in files]
         # print(f"Fichiers reçus : {[f.filename for f in files]}")
         # print(f"Taille des fichiers : {[f.file.size for f in files]} octets")
         tasks = [asyncio.to_thread(_process_upload, f, conv.id) for f in files]
-        await asyncio.gather(*tasks)
+        texts_from_files = await asyncio.gather(*tasks)
 
     user_msg_id = await asyncio.to_thread(local.insert_message_and_memory, conv.id, "user", content)
     
@@ -378,7 +411,7 @@ async def send_message(
         answer = await asyncio.to_thread(web.recherche_web, content)
         await asyncio.to_thread(local.insert_message_and_memory, conv.id, "assistant", answer)
     else:
-        answer = await asyncio.to_thread(local.answer_with_memory, content, conv.id, file_names=filenames)
+        answer = await asyncio.to_thread(local.answer_with_memory, content, conv.id, file_names=filenames, textsFromFiles=texts_from_files)
 
     conv.last_update = datetime.now(timezone.utc)
     await asyncio.to_thread(_touch_conv, conv.id)
@@ -399,6 +432,7 @@ async def delete_conversation(
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
+    db.query(Message).filter(Message.conversation_id == conv.id).delete()
     db.delete(conv)
     db.commit()
     return {"message": "Conversation deleted"}

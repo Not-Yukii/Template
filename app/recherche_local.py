@@ -19,10 +19,10 @@ from ollama import chat as ollama_chat
 
 from app import recherche_web
 
-DB_NAME = "test"
-DB_USER = "postgres"
-DB_PASSWORD = "admin"
-DB_HOST = "localhost"
+DB_NAME = os.getenv("DB_NAME")
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_HOST = os.getenv("DB_HOST")
 
 # --- CONSTantes de connexion PostgreSQL
 DB_URI = f"postgresql+psycopg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:5432/{DB_NAME}"
@@ -304,6 +304,24 @@ def search_if_relevant(user_input: str, doc_passages: List[str]) -> bool:
     
     return response
 
+def get_recent_messages(conversation_id: int, n: int = 6) -> list[str]:
+    """Retourne les n derniers échanges du fil, du plus ancien au plus récent."""
+    query = """
+        SELECT role, content
+        FROM   messages
+        WHERE  conversation_id = %s
+        ORDER  BY id DESC
+        LIMIT  %s
+    """
+    with psycopg.connect(
+        dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD, host=DB_HOST
+    ) as conn, conn.cursor() as cur:
+        cur.execute(query, (conversation_id, n))
+        rows = cur.fetchall()
+    # on inverse pour conserver l’ordre chronologique
+    rows.reverse()
+    return [f"<{r}>\n{c.strip()}\n</{r}>" for r, c in rows]
+
 def generer_keywords_requete(question: str) -> str:
     llm = OllamaLLM(model="llama3.1:8b")
     prompt = (
@@ -329,7 +347,7 @@ def generer_keywords_requete(question: str) -> str:
     response = response.strip().lower()
     return response
 
-def answer_with_memory(question: str, conversation_id: int, k_mem: int = 5, k_docs: int = 20, file_names: List[str] | None = None) -> str:
+def answer_with_memory(question: str, conversation_id: int, k_mem: int = 5, k_docs: int = 20, file_names: List[str] | None = None, texts_from_files: List[str] | None = None) -> str:
     """Pipeline complet : retrieve mémoire + docs puis génération."""
     # 1) Récupération contexte & RAG
     memories = retrieve_memories(conversation_id, question, k=k_mem)
@@ -372,11 +390,17 @@ def answer_with_memory(question: str, conversation_id: int, k_mem: int = 5, k_do
     
     prompt += f"<research_keywords> {' '.join(generer_keywords_requete(question).split())} </research_keywords>\n\n"
 
-    if file_names:
-        question += " Les fichiers mentionnés sont : " + ", ".join(file_names)
+    # ajouts noms fichiers et texts from files dans le prompt en simultané
+    if file_names and texts_from_files:
+        for i, (file_name, text) in enumerate(zip(file_names, texts_from_files), 1):
+            question += f"Les fichiers mentionnés sont : <file_{i}>\n{file_name} content :\n{text}\n</file_{i}>\n"
 
     if memories:
         prompt += "\n<conversation_context>\n" + "\n".join(memories) + "\n</conversation_context>"
+    
+    recent_history = get_recent_messages(conversation_id, n=6)
+    if recent_history:
+        prompt += "\n<recent_history>\n" + "\n".join(recent_history) + "\n</recent_history>"
 
     if documents:
         # 1) Extract your query keywords from question.split()
