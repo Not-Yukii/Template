@@ -1,5 +1,10 @@
 import sys
 import asyncio
+import os
+import re
+import argparse
+import smtplib
+import tempfile, shutil
 
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -11,15 +16,11 @@ from langchain_community.document_loaders.pdf import PyPDFLoader
 from langchain_community.document_loaders.markdown import UnstructuredMarkdownLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain.schema import Document
-import tempfile, shutil
 from pathlib import Path
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, DateTime
+from sqlalchemy import Boolean, create_engine, Column, Integer, String, ForeignKey, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from datetime import datetime, timezone
-import os
-import re
-import argparse
 from langchain.prompts.chat import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
 from langchain_community.llms.ollama import Ollama
 from passlib.context import CryptContext
@@ -31,6 +32,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from contextlib import asynccontextmanager
 from typing import List, Optional
 from fastapi import Form, File, UploadFile
+from email.mime.text import MIMEText
 from . import recherche_web as web
 from . import recherche_titre as titre
 from . import recherche_local as local
@@ -39,6 +41,10 @@ DB_NAME = os.getenv("DB_NAME")
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 DB_HOST = os.getenv("DB_HOST")
+GMAIL_ADDRESS = os.getenv("GMAIL_ADDRESS")
+GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
+
+FRONTEND_URL = "http://192.168.100.1:8000"
 
 DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:5432/{DB_NAME}"
 
@@ -86,11 +92,43 @@ def get_password_hash(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
+# --- création et vérif de jeton ---
+def create_email_verification_token(user_id: int) -> str:
+    expire = datetime.utcnow() + timedelta(hours=1)
+    payload = {"sub": str(user_id), "exp": expire, "type": "verify"}
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+def verify_email_token(token: str) -> int:
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    if payload.get("type") != "verify":
+        raise JWTError("Wrong token type")
+    return int(payload["sub"])
+
+# --- envoi via Gmail SMTP ---
+def send_verification_email(to_email: str, token: str):
+    verify_link = f"{FRONTEND_URL}/verify-email?token={token}"
+    body = (
+        f"Bonjour,\n\n"
+        f"Merci de vous être inscrit.\n"
+        f"Cliquez sur ce lien pour vérifier votre adresse : {verify_link}\n\n"
+        f"Ce lien est valable 1 h."
+    )
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = "Vérification de votre email"
+    msg["From"] = GMAIL_ADDRESS
+    msg["To"] = to_email
+
+    with smtplib.SMTP("smtp.gmail.com", 587) as smtp:
+        smtp.starttls()
+        smtp.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
+        smtp.send_message(msg)
+
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True)
     password = Column(String)
+    is_verified = Column(Boolean, default=False) 
 
 class Conversation(Base):
     __tablename__ = "conversations"
@@ -190,7 +228,45 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    return {"id": new_user.id, "email": new_user.email}
+    
+    token = create_email_verification_token(new_user.id)
+    try:
+        send_verification_email(new_user.email, token)
+    except Exception as e:
+        db.delete(new_user)
+        db.commit()
+        raise HTTPException(
+            status_code=500,
+            detail="Erreur lors de l'envoi de l'email de vérification. "
+                   "Veuillez réessayer plus tard.",
+        )
+    
+    return {"message": "Compte créé. Vérifiez votre boîte mail pour activer le compte."}
+
+@app.get("/verify-email")
+def verify_email(token: str, db: Session = Depends(get_db)):
+    try:
+        user_id = verify_email_token(token)
+    except JWTError:
+        db_user = db.query(User).filter(User.id == user_id).first()
+        db.delete(db_user)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token de vérification invalide ou expiré",
+        )
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Utilisateur non trouvé")
+    
+    if user.is_verified:
+        return {"message": "Email déjà vérifié"}
+    
+    user.is_verified = True
+    db.commit()
+    
+    return {"message": "Email vérifié avec succès"}
 
 @app.post("/login", response_model=Token)
 def login(user: UserLogin, db: Session = Depends(get_db)):
@@ -200,6 +276,11 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email ou mot de passe incorrect",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not db_user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email non vérifié. Veuillez vérifier votre boîte mail.",
         )
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
