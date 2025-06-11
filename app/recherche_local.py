@@ -259,7 +259,7 @@ def rank_chunks(
     query: str,
     store: PGVector,
     k: int = 20,
-    threshold: float | None = 0.25,
+    threshold: float | None = 0.30,
 ) -> list[Tuple[Document, float]]:
     """
     Retourne la liste (Document, score) triée par similarité croissante.
@@ -276,7 +276,7 @@ def rank_chunks(
     # On garde au maximum k chunks
     return sorted(results, key=lambda x: x[1])[:k]
 
-def retrieve_documents(query: str, k: int = 5, threshold: float = 0.25) -> List[str]:
+def retrieve_documents(query: str, k: int = 5, threshold: float = 0.30) -> List[str]:
     """
     Récupère jusqu’à k chunks pertinents :
       1. score sémantique < threshold (rank_chunks)
@@ -396,6 +396,7 @@ def answer_with_memory(question: str, conversation_id: int, k_mem: int = 5, k_do
     print("\nLes docs:\n\n")
     print(documents)
     print("\nFin des docs:\n\n")
+    print(len(documents), "documents utilisés")
     use_rag = bool(documents)
     print(f"RAG is relevant: {use_rag}")
 
