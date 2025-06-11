@@ -43,6 +43,7 @@ DB_PASSWORD = os.getenv("DB_PASSWORD")
 DB_HOST = os.getenv("DB_HOST")
 GMAIL_ADDRESS = os.getenv("GMAIL_ADDRESS")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
+base_url = "http://ollamaProjet4A:11434"
 
 FRONTEND_URL = "http://192.168.100.1:8000"
 
@@ -434,7 +435,7 @@ def find_emotions(text: str) -> List[str]:
         HumanMessagePromptTemplate.from_template(HUMAN_PROMPT),
     ])
 
-    llm = Ollama(model="granite3.1-dense:latest", temperature=0)
+    llm = Ollama(model="granite3.1-dense:latest", temperature=0, base_url=base_url)
     
     raw = llm.invoke(prompt_template.format(text=text)).strip()
 
@@ -492,8 +493,7 @@ async def send_message(
         answer = await asyncio.to_thread(web.recherche_web, content)
         await asyncio.to_thread(local.insert_message_and_memory, conv.id, "assistant", answer)
     else:
-        answer = await asyncio.to_thread(local.answer_with_memory, content, conv.id, file_names=filenames, textsFromFiles=texts_from_files)
-
+        answer = await asyncio.to_thread(local.answer_with_memory, content, conv.id, file_names=filenames, texts_from_files=texts_from_files)
     conv.last_update = datetime.now(timezone.utc)
     await asyncio.to_thread(_touch_conv, conv.id)
 

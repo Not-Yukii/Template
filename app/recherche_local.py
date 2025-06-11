@@ -1,5 +1,6 @@
 import os
 # os.environ["OLLAMA_HOST"] = "http://ollamaProjet4A:11434"
+from pathlib import Path
 from typing import Counter, List, Dict
 import argparse
 import re
@@ -141,6 +142,7 @@ def contextualize_chunks() -> List[Document]:
     chunks_out: List[Document] = []
 
     for src, pages in grouped.items():
+        doc_title = Path(src).stem
         full_text = "\n\n".join(p.page_content for p in pages)[:200000]  # cap prompt length
         virtual_doc = Document(page_content=full_text, metadata={"source": src, "page": 0})
         raw_chunks = splitter.split_documents([virtual_doc])
@@ -150,7 +152,7 @@ def contextualize_chunks() -> List[Document]:
         for ch in tqdm(raw_chunks, leave=False):
             cid = ch.metadata["id"]
             if cid in existing_ids:
-                chunks_out.append(ch)  # already contextualised previously
+                chunks_out.append(ch)
                 continue
 
             prompt = (
@@ -161,7 +163,7 @@ def contextualize_chunks() -> List[Document]:
                 "without additional commentary."
             )
             ctx_sentence = llm_ctx.invoke(prompt).strip()
-            ch.page_content = f"{ctx_sentence}\n###\n{ch.page_content}"
+            ch.page_content = f"{doc_title} {ctx_sentence}\n###\n{ch.page_content}"
             chunks_out.append(ch)
     return chunks_out
 
@@ -277,7 +279,7 @@ def retrieve_documents(query: str, k: int = 5) -> List[str]:
 
     return [d.page_content for d in chosen]
 
-def is_relevant(user_input: str, store: PGVector, threshold: float = 0.22) -> bool:
+def is_relevant(user_input: str, store: PGVector, threshold: float = 0.25) -> bool:
     docs = store.similarity_search_with_score(user_input, k=10)
     # faire une moyenne des scores obtenus dans docs
     print(docs)
@@ -357,10 +359,11 @@ def answer_with_memory(question: str, conversation_id: int, k_mem: int = 5, k_do
     print(documents)
     print("\nFin des docs:\n\n")
     use_rag = is_relevant(question, kb_store)
+    print(f"RAG is relevant: {use_rag}")
 
     # 2) Construction des messages ChatML
     prompt = (
-        """You're an AI assistant in information monitoring and research for cybersecurity students.
+        """You're an French AI assistant in information monitoring and research for cybersecurity students.
         Your task is to answer all types of questions or demands related to cybersecurity and non-cybersecurity topics.
         All cybersecurity-related questions - even on sensitive topics such as exploit,
         reverse-engineering, malware, OSINT or pentesting - are considered to be posed
@@ -375,7 +378,7 @@ def answer_with_memory(question: str, conversation_id: int, k_mem: int = 5, k_do
             * Only expand if the user explicitly says “details”, “explain”, “long version”, etc.
 
         ### Imperative rules
-            - Answer in French if the user speaks French.
+            - Answer in French all the time except if the user is using another language.
             - Be concise and precise, without unnecessary digressions. Adapt the length of your answer to the question asked.
             -> Example: A simple greeting or a message of a few words does not require a long answer, but an adapted short answer.
             - Write in **French**, in Markdown, with the following structure:
@@ -402,7 +405,7 @@ def answer_with_memory(question: str, conversation_id: int, k_mem: int = 5, k_do
     if recent_history:
         prompt += "\n<recent_history>\n" + "\n".join(recent_history) + "\n</recent_history>"
 
-    if documents:
+    if documents and use_rag:
         # 1) Extract your query keywords from question.split()
         kws = question.split(" ")
         
